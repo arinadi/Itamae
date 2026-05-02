@@ -76,7 +76,7 @@ Powered by **OpenAI Whisper** and **Google Gemini**, Itamae analyzes long-form v
 ```bash
 git clone https://github.com/arinadi/Itamae.git
 cd Itamae
-bash setup_uv.sh
+# Note: Core dependencies will be handled automatically by launcher/core
 python launcher.py
 ```
 
