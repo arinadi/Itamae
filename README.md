@@ -23,20 +23,25 @@ Transform long-form videos into high-paced, viral-ready clips for TikTok, Reels,
 
 ## 🚀 Quick Setup (The One-Key Kitchen)
 
-For maximum portability and speed, Itamae uses the **One-Key Kitchen** method. Set it up once on GitHub, and open your restaurant on any Colab account in seconds.
+For maximum portability and speed, Itamae uses the **One-Key Kitchen** method. Set it up once, and open your restaurant on any Colab account in seconds.
 
-1.  **Prepare your Key** 🔑:
-    In Colab's **Secrets** tab, add only **TWO** ingredients:
-    - `ITAMAE_GITHUB_TOKEN`: (Your GitHub Personal Access Token)
-    - `ITAMAE_GIST_ID`: (The ID of your secret `.env.itamae` Gist)
-    
-    > **New to this?** Follow the [Full Setup Guide](guide.md) to create your secret key in 60 seconds.
+### Step 1: Create your Secret Gist 🔑
+Go to [gist.github.com](https://gist.github.com/) and create a **Secret Gist** with the exact filename **`.env.itamae`**. Paste your ingredients there:
 
-2.  **Heat the Stove** 🔥:
-    Set Runtime to **T4 GPU** or higher. *Itamae requires a GPU for precision slicing.*
+```env
+ITAMAE_TELEGRAM_TOKEN=your_bot_token
+ITAMAE_ADMIN_CHAT_ID=your_chat_id
+ITAMAE_GEMINI_KEY=your_gemini_key
+```
+> **Pro Tip:** Use the [GitHub CLI Guide](guide.md) to create this key in seconds from your terminal.
 
-3.  **Invite the Chef** 🛎️:
-    Run this cell to open the restaurant:
+### Step 2: Heat the Stove (Google Colab) 🔥
+1.  Open the project in **Google Colab**.
+2.  Set Runtime to **T4 GPU** or higher (*Runtime > Change runtime type*).
+3.  In the **Secrets** tab (key icon), add only:
+    - `ITAMAE_GITHUB_TOKEN`: (Your GitHub Token)
+    - `ITAMAE_GIST_ID`: (The ID of your `.env.itamae` Gist)
+4.  Run this cell to invite the Chef:
 
     ```python
     # @title 🔪 Launch Itamae Slicer
@@ -56,7 +61,7 @@ For maximum portability and speed, Itamae uses the **One-Key Kitchen** method. S
 
 <details>
 <summary><b>Alternative: Manual Kitchen Setup</b></summary>
-
+...
 If you don't want to use GitHub Gist, you can add all secrets directly in Colab's Secrets tab:
 - `ITAMAE_TELEGRAM_TOKEN`
 - `ITAMAE_ADMIN_CHAT_ID`
