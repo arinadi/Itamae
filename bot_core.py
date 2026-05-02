@@ -154,11 +154,16 @@ async def initialize_models_background():
             await perform_shutdown("No GPU available")
             return
 
-        # 3. Load Whisper (GPU Optimized)
-        from faster_whisper import WhisperModel
+        # 3. Load Whisper (GPU Optimized with Batching)
+        from faster_whisper import WhisperModel, BatchedInferencePipeline
         log("INIT", f"Loading Whisper ({WHISPER_MODEL}, {device})...")
-        model = await asyncio.to_thread(WhisperModel, WHISPER_MODEL, device=device, compute_type="float16")
-        log("INIT", "Whisper loaded (FP16).")
+        
+        # Core Model
+        base_model = await asyncio.to_thread(WhisperModel, WHISPER_MODEL, device=device, compute_type="float16")
+        
+        # Optimization: Wrap in BatchedInferencePipeline for 4x speedup
+        model = BatchedInferencePipeline(model=base_model)
+        log("INIT", "Whisper loaded with BatchedInferencePipeline (Turbo speed).")
 
         # 4. Initialize Gemini
         if GEMINI_API_KEY:
