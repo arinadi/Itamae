@@ -1,0 +1,5 @@
+# requirements_cpu.txt (Ultra Light)
+ffmpeg-python
+python-telegram-bot
+nest_asyncio
+werkzeug
