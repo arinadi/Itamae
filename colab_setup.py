@@ -1,6 +1,8 @@
 import os
 import time
 import sys
+import requests
+import json
 
 # --- CONFIGURATION ---
 REPO_URL = "https://github.com/arinadi/Itamae.git" 
@@ -11,10 +13,49 @@ def run_command(cmd):
     print(f"Executing: {cmd}")
     return os.system(cmd)
 
+def load_secrets_from_gist():
+    """Loads project secrets from a private GitHub Gist if tokens are provided."""
+    token = os.environ.get('ITAMAE_GITHUB_TOKEN') or os.environ.get('GITHUB_TOKEN')
+    gist_id = os.environ.get('ITAMAE_GIST_ID')
+    
+    if not token or not gist_id:
+        print("ℹ️ Gist Loader: No token or Gist ID found. Skipping cloud secrets.")
+        return
+
+    print(f"⏳ Gist Loader: Fetching secrets from Gist {gist_id[:4]}...")
+    try:
+        headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"}
+        response = requests.get(f"https://api.github.com/gists/{gist_id}", headers=headers, timeout=10)
+        response.raise_for_status()
+        
+        gist_data = response.json()
+        secrets_loaded = 0
+        for filename, file_info in gist_data.get('files', {}).items():
+            if filename.endswith('.json'):
+                try:
+                    content = json.loads(file_info['content'])
+                    for key, value in content.items():
+                        if key.startswith("ITAMAE_"):
+                            os.environ[key] = str(value)
+                            secrets_loaded += 1
+                except json.JSONDecodeError:
+                    print(f"⚠️ Gist Loader: Failed to parse {filename} as JSON.")
+        
+        if secrets_loaded > 0:
+            print(f"✅ Gist Loader: Successfully loaded {secrets_loaded} secrets from GitHub.")
+        else:
+            print("⚠️ Gist Loader: No valid ITAMAE_ secrets found in Gist.")
+            
+    except Exception as e:
+        print(f"❌ Gist Loader Error: {e}")
+
 def main():
     start_time = time.time()
     if 'INIT_START' not in os.environ:
         os.environ['INIT_START'] = str(int(start_time))
+
+    # 0. Load Cloud Secrets
+    load_secrets_from_gist()
 
     print("🔄 Checking environment...")
 

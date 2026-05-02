@@ -92,4 +92,37 @@ This is where the actual cooking (video processing) happens.
 -   **Bot Not Responding**: Ensure the Colab cell is still running and "Notebook access" is enabled for your secrets.
 
 ---
+
+## 🌍 Advanced: One-Key Kitchen (Portable Setup)
+
+Tired of entering secrets every time you switch Colab accounts? Use the **One-Key Kitchen** method to load all secrets automatically from a private GitHub Gist.
+
+### 1. Create a Secret Gist
+1.  Go to [gist.github.com](https://gist.github.com/).
+2.  Create a new gist named `jiro_secrets.json`.
+3.  Paste your secrets in JSON format:
+    ```json
+    {
+      "ITAMAE_TELEGRAM_TOKEN": "your_bot_token",
+      "ITAMAE_ADMIN_CHAT_ID": "your_chat_id",
+      "ITAMAE_GEMINI_KEY": "your_gemini_key"
+    }
+    ```
+4.  Click **"Create secret gist"**.
+5.  **Copy the Gist ID** from the URL: `https://gist.github.com/username/<GIST_ID_HERE>`.
+
+### 2. Generate GitHub Token
+1.  Go to [GitHub Settings > Tokens (classic)](https://github.com/settings/tokens).
+2.  Generate a **New Token**.
+3.  Select the **`gist`** scope (and `repo` if your Itamae fork is private).
+4.  Copy the token.
+
+### 3. One-Time Colab Setup
+Now, in any Colab account, you only need to add **TWO** secrets:
+-   `ITAMAE_GITHUB_TOKEN`: (Your GitHub Token)
+-   `ITAMAE_GIST_ID`: (Your Gist ID)
+
+Jiro will automatically fetch the rest of the ingredients from your GitHub Gist upon startup!
+
+---
 *“A master chef serves only perfection. Happy slicing!”* 🔪🍣✨
