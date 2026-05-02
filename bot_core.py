@@ -17,12 +17,19 @@ from utils import (
     summarize_text, 
     format_duration, 
     log, 
-    get_runtime
+    get_runtime,
+    transcribe_with_gemini,
+    fetch_video_metadata,
+    download_video_optimal,
+    get_video_highlights_csv,
+    slice_video_clip,
+    concatenate_video_segments
 )
 from bot_classes import TranscriptionJob, IdleMonitor, JobManager, FilesHandler
 
-# --- Transcription Mode ---
-MODE = os.getenv('TRANSCRIPTION_MODE', 'GEMINI')
+# --- Transcription Mode (GPU Mandatory) ---
+MODE = 'WHISPER'
+device = "cuda"
 
 # --- External Libraries (Core - The Waiter) ---
 try:
@@ -115,8 +122,6 @@ os.makedirs(TRANSCRIPT_FOLDER, exist_ok=True)
 # SECTION 3: AI AND HARDWARE INITIALIZATION (The Kitchen)
 # ------------------------------------------------------------------------------
 
-# Initial hardware detection
-device = "cuda" if MODE == 'WHISPER' else "cpu"
 models_ready_event = asyncio.Event()
 
 async def initialize_models_background():
@@ -125,36 +130,33 @@ async def initialize_models_background():
     try:
         if SHUTDOWN_IN_PROGRESS: return
 
-        log("INIT", "Kitchen is heating up (Loading heavy dependencies)...")
+        log("INIT", "Kitchen is heating up (Loading GPU acceleration)...")
         
-        # 1. Background Installation using uv (High Speed)
+        # 1. Background Installation using uv
         try:
             import torch
             from faster_whisper import WhisperModel
         except ImportError:
             log("INIT", "Kitchen equipment missing. Ordering now (~1 min)...")
-            await send_telegram_notification(application, "📦 *Kitchen Update:* Ordering heavy equipment (ML libraries). I can take your orders, but cooking will start once tools arrive.")
+            await send_telegram_notification(application, "📦 *Kitchen Update:* Installing GPU-accelerated libraries. Cooking will start shortly.")
             
-            process = await asyncio.create_subprocess_exec("pip", "install", "uv", "-q")
-            await process.wait()
-            
-            process = await asyncio.create_subprocess_exec("uv", "pip", "install", "--system", "-r", "requirements_kitchen.txt", "-q")
-            await process.wait()
+            await (await asyncio.create_subprocess_exec("pip", "install", "uv", "-q")).wait()
+            await (await asyncio.create_subprocess_exec("uv", "pip", "install", "--system", "-r", "requirements_kitchen.txt", "-q")).wait()
             log("INIT", "Kitchen equipment arrived.")
 
-        # 2. Hardware verification after install
+        # 2. Hard GPU check
         import torch
-        from faster_whisper import WhisperModel
         if not torch.cuda.is_available():
-            device = "cpu"
-            log("INIT", "GPU not accessible. Using CPU.")
+            log("ERROR", "GPU not accessible by Torch!")
+            await send_telegram_notification(application, "❌ *Kitchen Failure:* GPU not detected by AI engine. Please restart runtime.")
+            await perform_shutdown("No GPU available")
+            return
 
-        # 3. Load Whisper
-        if MODE == 'WHISPER':
-            log("INIT", f"Loading Whisper ({WHISPER_MODEL}, {device})...")
-            compute_type = "float16" if device == "cuda" else "int8"
-            model = await asyncio.to_thread(WhisperModel, WHISPER_MODEL, device=device, compute_type=compute_type)
-            log("INIT", "Whisper loaded.")
+        # 3. Load Whisper (GPU Optimized)
+        from faster_whisper import WhisperModel
+        log("INIT", f"Loading Whisper ({WHISPER_MODEL}, {device})...")
+        model = await asyncio.to_thread(WhisperModel, WHISPER_MODEL, device=device, compute_type="float16")
+        log("INIT", "Whisper loaded (FP16).")
 
         # 4. Initialize Gemini
         if GEMINI_API_KEY:
@@ -253,7 +255,11 @@ async def update_startup_message(gradio_url: str = None):
     ai_status = "✅ Kitchen Open" if models_ready_event.is_set() else "⏳ Preparing Kitchen..."
     hardware_label = "NVIDIA GPU"
     
-    # ...
+    if not gradio_url and GRADIO_AVAILABLE and gradio_handler and gradio_handler.gradio_app:
+        if hasattr(gradio_handler.gradio_app, 'share_url'):
+            gradio_url = gradio_handler.gradio_app.share_url
+
+    gradio_text = f"🌐 *Web UI:* {gradio_url}\n" if gradio_url else ""
     
     msg_text = (
         f"🤵 *Welcome to Itamae Sushi Bar*\n"
@@ -306,7 +312,7 @@ async def queue_processor():
     while not SHUTDOWN_IN_PROGRESS:
         job: TranscriptionJob = await job_manager.job_queue.get()
         if job.status == 'cancelled':
-            if os.path.exists(job.local_filepath): os.remove(job.local_filepath)
+            if job.local_filepath and os.path.exists(job.local_filepath): os.remove(job.local_filepath)
             job_manager.job_queue.task_done()
             job_manager.complete_job(job.job_id)
             continue
@@ -314,47 +320,66 @@ async def queue_processor():
         job_manager.set_processing_job(job)
         try:
             duration_str = format_duration(job.audio_duration)
-            await application.bot.send_message(job.chat_id, f"▶️ Processing `{job.original_filename}` ({duration_str})...", parse_mode=ParseMode.MARKDOWN)
             start_time = time.time()
 
-            if MODE == 'GEMINI':
-                from utils import transcribe_with_gemini
-                transcript_text, detected_language = await transcribe_with_gemini(job.local_filepath, job.audio_duration, gemini_client)
-            else:
-                transcript_text, detected_language = await asyncio.to_thread(run_transcription_process, job)
-            
-            if job.status == 'cancelled': raise asyncio.CancelledError("Job cancelled during transcription.")
+            # --- Phase A: Sourcing ---
+            if job.is_url_job:
+                await application.bot.send_message(job.chat_id, f"📥 *Sourcing Ingredients:* `{job.video_title}`", parse_mode=ParseMode.MARKDOWN)
+                job.local_filepath = await download_video_optimal(job.original_url, UPLOAD_FOLDER)
+                if not job.local_filepath: raise Exception("Failed to download video.")
 
-            base_name = os.path.splitext(job.original_filename)[0]
-            safe_name = secure_filename(base_name)[:50]
-            ts_filename = f"{TRANSCRIPT_FILENAME_PREFIX}_({duration_str.replace(' ', '')})_{safe_name}.txt"
-            ts_filepath = os.path.join(TRANSCRIPT_FOLDER, ts_filename)
+            await application.bot.send_message(job.chat_id, f"▶️ *Processing:* `{job.video_title or job.original_filename}` ({duration_str})...", parse_mode=ParseMode.MARKDOWN)
+
+            # --- Phase B: AI Analysis ---
+            transcript_text, detected_language = await asyncio.to_thread(run_transcription_process, job)
+            if job.status == 'cancelled': raise asyncio.CancelledError("Cancelled")
+
+            # Save/Send Transcript
+            safe_name = secure_filename(os.path.splitext(job.original_filename)[0])[:50]
+            ts_filepath = os.path.join(TRANSCRIPT_FOLDER, f"{TRANSCRIPT_FILENAME_PREFIX}_{safe_name}.txt")
             with open(ts_filepath, "w", encoding="utf-8") as f: f.write(transcript_text)
+            await application.bot.send_document(job.chat_id, document=open(ts_filepath, 'rb'), filename=os.path.basename(ts_filepath), caption=f"📄 Transcript: `{job.video_title or job.original_filename}`", reply_to_message_id=job.message_id)
 
-            processing_duration_str = format_duration(time.time() - start_time)
-            result_text = (f"✅ *Done!* `{job.original_filename}`\n⏱️ {duration_str} audio → {processing_duration_str} process\n🌐 Lang: {detected_language.upper()}\n🤖 Generating AI Summary...")
-            await application.bot.send_message(job.chat_id, result_text, parse_mode=ParseMode.MARKDOWN, reply_to_message_id=job.message_id)
-            with open(ts_filepath, 'rb') as ts_file:
-                await application.bot.send_document(job.chat_id, document=ts_file, filename=ts_filename, reply_to_message_id=job.message_id)
+            # Highlights
+            highlights = await get_video_highlights_csv(transcript_text, gemini_client)
+            if highlights:
+                from more_itertools import groupby_transform
+                grouped = []
+                for k, g in groupby_transform(highlights, key=lambda h: h["title"]): grouped.append((k, list(g)))
+                
+                await application.bot.send_message(job.chat_id, f"🔪 *Chef is slicing:* Identified `{len(grouped)}` highlights. Slicing now...", parse_mode=ParseMode.MARKDOWN)
+                
+                # --- Phase C: Slicing & Phase D: Delivery ---
+                for title, segments in grouped:
+                    seg_paths = []
+                    try:
+                        for i, seg in enumerate(segments):
+                            seg_path = os.path.join(UPLOAD_FOLDER, f"SEG_{i}_{uuid.uuid4().hex[:4]}.mp4")
+                            if await slice_video_clip(job.local_filepath, seg["start"], seg["end"], seg_path):
+                                seg_paths.append(seg_path)
+                        
+                        final_clip = os.path.join(UPLOAD_FOLDER, f"CLIP_{secure_filename(title)}.mp4")
+                        # --- Phase D: Delivery ---
+                        from utils import send_video_adaptive
+                        success_send = await send_video_adaptive(
+                            application.bot, 
+                            job.chat_id, 
+                            final_clip, 
+                            f"🍣 *{title}*", 
+                            reply_to_id=job.message_id
+                        )
+                        if success_send:
+                            os.remove(final_clip)
+                        for p in seg_paths: 
+                            if os.path.exists(p): os.remove(p)
 
-            if gemini_client:
-                try:
-                    summary_text = await summarize_text(transcript_text, gemini_client, mode=MODE)
-                    if job.status == 'cancelled': raise asyncio.CancelledError("Job cancelled during summarization.")
-                    su_filename = f"{SUMMARY_FILENAME_PREFIX}_({duration_str.replace(' ', '')})_{safe_name}.txt"
-                    su_filepath = os.path.join(TRANSCRIPT_FOLDER, su_filename)
-                    with open(su_filepath, "w", encoding="utf-8") as f: f.write(summary_text)
-                    with open(su_filepath, 'rb') as su_file:
-                        await application.bot.send_document(job.chat_id, document=su_file, filename=su_filename, reply_to_message_id=job.message_id)
-                except Exception as e:
-                    await application.bot.send_message(job.chat_id, f"⚠️ AI Summary Failed: {e}", reply_to_message_id=job.message_id)
             job.status = "completed"
         except asyncio.CancelledError: pass
         except Exception as e:
-            job.status = "failed"
-            await application.bot.send_message(job.chat_id, f"❌ *Failed:* `{job.original_filename}`\n`{e}`", parse_mode=ParseMode.MARKDOWN, reply_to_message_id=job.message_id)
+            job.status = "failed"; log("ERROR", f"[{job.job_id}] {e}")
+            await application.bot.send_message(job.chat_id, f"❌ *Kitchen Accident:* `{e}`", parse_mode=ParseMode.MARKDOWN, reply_to_message_id=job.message_id)
         finally:
-            if os.path.exists(job.local_filepath):
+            if job.local_filepath and os.path.exists(job.local_filepath):
                 try: os.remove(job.local_filepath)
                 except Exception: pass
             job_manager.job_queue.task_done()
@@ -366,11 +391,9 @@ async def queue_processor():
 
 async def get_status_text_and_keyboard():
     processing_job = job_manager.currently_processing
-    processing_line = f"👨‍🍳 *Currently Cooking:* `{processing_job.original_filename}`\n" if processing_job else ""
+    processing_line = f"👨‍🍳 *Currently Cooking:* `{processing_job.video_title if processing_job.is_url_job else processing_job.original_filename}`\n" if processing_job else ""
     ai_status = "✅ Kitchen Ready" if models_ready_event.is_set() else "⏳ Preparing Kitchen"
-    mode_label = "Gemini Cloud" if MODE == 'GEMINI' else f"Local {WHISPER_MODEL}"
-    hardware_label = "NVIDIA GPU" if device == "cuda" else "Standard CPU"
-    text = (f"📊 *Restaurant Status*\n🛠️ *Equipment:* `{hardware_label}`\n🤖 *AI Engine:* `{mode_label}`\n{processing_line}⏳ Uptime: `{get_runtime()}` | Queue: `{job_manager.job_queue.qsize()}`\n🛎️ *AI Status:* {ai_status}")
+    text = (f"📊 *Restaurant Status*\n🛠️ *Equipment:* `NVIDIA GPU`\n🤖 *AI Engine:* `{WHISPER_MODEL}`\n{processing_line}⏳ Uptime: `{get_runtime()}` | Queue: `{job_manager.job_queue.qsize()}`\n🛎️ *AI Status:* {ai_status}")
     keyboard = [[InlineKeyboardButton("📄 View Orders", callback_data="view_cancel_jobs"), InlineKeyboardButton("🔄", callback_data="refresh_status"), InlineKeyboardButton("🔌", callback_data="shutdown_bot")]]
     return text, InlineKeyboardMarkup(keyboard)
 
@@ -382,9 +405,9 @@ async def queue_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     processing_job = job_manager.currently_processing
     queued_jobs = job_manager.get_queued_jobs()
     lines = ["📄 *Job Queue*\n"]
-    if processing_job: lines.append(f"\n▶️ *Currently Processing*\n`{processing_job.original_filename}`\n(By: {processing_job.author_display_name})")
+    if processing_job: lines.append(f"\n▶️ *Currently Processing*\n`{processing_job.video_title if processing_job.is_url_job else processing_job.original_filename}`\n(By: {processing_job.author_display_name})")
     if queued_jobs:
-        queue_text = [f"*{i}.* `{job.original_filename}` (By: {job.author_display_name})" for i, job in enumerate(queued_jobs, 1)]
+        queue_text = [f"*{i}.* `{job.video_title if job.is_url_job else job.original_filename}` (By: {job.author_display_name})" for i, job in enumerate(queued_jobs, 1)]
         lines.append(f"\n⏳ *In Queue ({len(queued_jobs)})*\n" + "\n".join(queue_text))
     elif not processing_job: lines.append("\nThe queue is empty.")
     await update.effective_message.reply_text("\n".join(lines), parse_mode=ParseMode.MARKDOWN)
@@ -397,36 +420,27 @@ async def extend_command(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.effective_message.reply_text(msg)
 
 async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = update.callback_query
-    await query.answer()
-    data = query.data
+    query = update.callback_query; await query.answer(); data = query.data
     if data == "refresh_status":
         text, reply_markup = await get_status_text_and_keyboard()
         try: await query.edit_message_text(text, reply_markup=reply_markup, parse_mode=ParseMode.MARKDOWN)
-        except telegram.error.BadRequest: pass
+        except: pass
     elif data == "shutdown_bot":
-        await query.edit_message_text("🔴 *MANUAL SHUTDOWN INITIATED...*", parse_mode=ParseMode.MARKDOWN)
-        await perform_shutdown(f"Manual Shutdown by {query.from_user.first_name}")
+        await query.edit_message_text("🔴 *MANUAL SHUTDOWN INITIATED...*", parse_mode=ParseMode.MARKDOWN); await perform_shutdown(f"Manual Shutdown by {query.from_user.first_name}")
     elif data == "view_cancel_jobs":
         queued_jobs = job_manager.get_queued_jobs()
-        if not queued_jobs:
-            await query.edit_message_text("The queue is empty.", reply_markup=None)
-            return
-        keyboard = [[InlineKeyboardButton(f"{job.original_filename[:40]}... (ID: {job.job_id})", callback_data=f"cancel_{job.job_id}")] for job in queued_jobs]
+        if not queued_jobs: await query.edit_message_text("The queue is empty.", reply_markup=None); return
+        keyboard = [[InlineKeyboardButton(f"{(job.video_title if job.is_url_job else job.original_filename)[:40]}... (ID: {job.job_id})", callback_data=f"cancel_{job.job_id}")] for job in queued_jobs]
         keyboard.append([InlineKeyboardButton("« Back to Status", callback_data="refresh_status")])
         await query.edit_message_text("Select a job below to cancel it:", reply_markup=InlineKeyboardMarkup(keyboard))
     elif data.startswith("cancel_"):
-        job_id = data.split("_")[1]
-        cancelled, job_name = await job_manager.cancel_job(job_id)
+        job_id = data.split("_")[1]; cancelled, job_name = await job_manager.cancel_job(job_id)
         msg = f"✅ Job `{job_name}` was cancelled." if cancelled else "❌ Could not cancel job."
         await query.edit_message_text(msg, reply_markup=None, parse_mode=ParseMode.MARKDOWN)
     elif data == "extend_idle":
-        if time.time() - idle_monitor.last_extend_time < 300:
-            await query.answer("⏳ Please wait 5 minutes before extending again.", show_alert=True)
-            return
+        if time.time() - idle_monitor.last_extend_time < 300: await query.answer("⏳ Please wait 5 minutes before extending again.", show_alert=True); return
         if idle_monitor.extend_timer(5):
-            idle_monitor.last_extend_time = time.time()
-            await query.edit_message_text(f"✅ *Idle Extended*\nTimer added +5 minutes.\n_Action by {query.from_user.first_name}_", parse_mode=ParseMode.MARKDOWN)
+            idle_monitor.last_extend_time = time.time(); await query.edit_message_text(f"✅ *Idle Extended*\nTimer added +5 minutes.\n_Action by {query.from_user.first_name}_", parse_mode=ParseMode.MARKDOWN)
         else: await query.edit_message_text("ℹ️ Bot is already active, no need to extend.", parse_mode=ParseMode.MARKDOWN)
 
 # ------------------------------------------------------------------------------
@@ -446,29 +460,17 @@ async def main():
         if ENABLE_IDLE_MONITOR:
             if MODE == 'GEMINI':
                 global IDLE_FIRST_ALERT_MINUTES, IDLE_FINAL_WARNING_MINUTES, IDLE_SHUTDOWN_MINUTES
-                IDLE_FIRST_ALERT_MINUTES *= 5
-                IDLE_FINAL_WARNING_MINUTES *= 5
-                IDLE_SHUTDOWN_MINUTES *= 5
+                IDLE_FIRST_ALERT_MINUTES *= 5; IDLE_FINAL_WARNING_MINUTES *= 5; IDLE_SHUTDOWN_MINUTES *= 5
             idle_monitor.start()
 
-        startup_text = (
-            f"🤵 *Welcome to Itamae Sushi Bar*\n"
-            f"I am your host. Feel free to send your audio/video files anytime.\n\n"
-            f"🛠️ *Equipment:* `Detecting...`\n"
-            f"🤖 *AI Engine:* `{'Gemini Cloud' if MODE == 'GEMINI' else WHISPER_MODEL}`\n"
-            f"📢 *Status:* ⏳ Preparing Kitchen...\n\n"
-            f"📂 *Order Limit:* `{BOT_FILESIZE_LIMIT}MB` per file"
-        )
+        startup_text = (f"🤵 *Welcome to Itamae Sushi Bar*\nI am your host. Feel free to send your audio/video files anytime.\n\n🛠️ *Equipment:* `Detecting...`\n🤖 *AI Engine:* `{WHISPER_MODEL}`\n📢 *Status:* ⏳ Preparing Kitchen...\n\n📂 *Order Limit:* `{BOT_FILESIZE_LIMIT}MB` per file")
         keyboard = [[InlineKeyboardButton("🔌 Close Restaurant", callback_data="shutdown_bot")]]
         msg = await application.bot.send_message(chat_id=TELEGRAM_CHAT_ID, text=startup_text, parse_mode=ParseMode.MARKDOWN, reply_markup=InlineKeyboardMarkup(keyboard))
-        global STARTUP_MESSAGE_ID
-        STARTUP_MESSAGE_ID = msg.message_id
+        global STARTUP_MESSAGE_ID; STARTUP_MESSAGE_ID = msg.message_id
 
     application = Application.builder().token(TELEGRAM_BOT_TOKEN).request(request).post_init(post_init).build()
-    idle_monitor = IdleMonitor(application, None, perform_shutdown)
-    job_manager = JobManager(application, idle_monitor, models_ready_event)
-    idle_monitor.job_manager = job_manager
-    files_handler = FilesHandler(job_manager, UPLOAD_FOLDER)
+    idle_monitor = IdleMonitor(application, None, perform_shutdown); job_manager = JobManager(application, idle_monitor, models_ready_event)
+    idle_monitor.job_manager = job_manager; files_handler = FilesHandler(job_manager, UPLOAD_FOLDER)
     chat_filter = filters.Chat(chat_id=TELEGRAM_CHAT_ID)
 
     application.add_handler(CommandHandler(["start", "status"], status_command, filters=chat_filter))
@@ -477,11 +479,23 @@ async def main():
     application.add_handler(CallbackQueryHandler(button_callback))
     application.add_handler(MessageHandler(filters.ATTACHMENT & chat_filter, files_handler.handle_files))
     
+    async def handle_text_urls(update: Update, context: ContextTypes.DEFAULT_TYPE):
+        text = update.effective_message.text
+        if not text: return
+        import re; url_pattern = re.compile(r'http[s]?://(?:[a-zA-Z]|[0-9]|[$-_@.&+]|[!*\(\),]|(?:%[0-9a-fA-F][0-9a-fA-F]))+')
+        urls = url_pattern.findall(text)
+        for url in urls:
+            if "youtube.com" in url or "youtu.be" in url:
+                status_msg = await update.effective_message.reply_text(f"🔍 *Sourcing Ingredients:* `{url}`", parse_mode=ParseMode.MARKDOWN)
+                metadata = await fetch_video_metadata(url)
+                if not metadata: await status_msg.edit_text("❌ Failed to fetch metadata."); continue
+                job = TranscriptionJob.from_url(update.effective_message, metadata); await job_manager.add_job(job); await status_msg.delete()
+
+    application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND & chat_filter, handle_text_urls))
+    
     async def global_error_handler(update: object, context: ContextTypes.DEFAULT_TYPE):
-        error = context.error
-        print(f"❌ Exception: {error}")
-        if "File too large" in str(error):
-            await perform_shutdown(f"Critical Error: {error}")
+        error = context.error; print(f"❌ Exception: {error}")
+        if "File too large" in str(error): await perform_shutdown(f"Critical Error: {error}")
 
     application.add_error_handler(global_error_handler)
     await application.run_polling(allowed_updates=Update.ALL_TYPES)

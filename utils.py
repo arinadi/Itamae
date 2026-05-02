@@ -71,7 +71,7 @@ def build_journalist_summary_prompt(today_date: str, file_metadata: str | None =
     )
     return prompt
 
-async def summarize_text(transcript: str, gemini_client, mode: str = 'GEMINI') -> str:
+async def summarize_text(transcript: str, gemini_client, mode: str = 'WHISPER') -> str:
     """Generates a journalist-friendly summary of the transcript using the Gemini API in Indonesian."""
     if not gemini_client:
         return "Summarization disabled: Gemini API key not configured or client failed to load."
@@ -156,69 +156,9 @@ def get_val(seg, key, default=0.0):
         return seg.get(key, default)
     return default
 
-def format_transcription_with_pauses(segments: list, pause_thresh: float = 2.0) -> str:
-    """
-    Formats Whisper segments with timestamps at significant pauses.
-    """
-    if not segments:
-        return ""
-
-    # 1. Normalize and clean segments
-    clean_segments = []
-    for seg in segments:
-        text = str(get_val(seg, 'text', '')).strip()
-        if not text:
-            continue
-            
-        start = float(get_val(seg, 'start', 0.0))
-        end = float(get_val(seg, 'end', start))
-        
-        clean_segments.append({
-            'start': start, 
-            'end': end, 
-            'text': text
-        })
-
-    if not clean_segments:
-        return ""
-
-    # 2. Build blocks based on pauses
-    blocks: list[str] = []
-    current_block_start = float(clean_segments[0]['start'])
-    current_text_parts = [str(clean_segments[0]['text'])]
-    last_end = clean_segments[0]['end']
-
-    for i in range(1, len(clean_segments)):
-        seg = clean_segments[i]
-        gap = float(seg['start']) - float(last_end)
-        
-        if gap > pause_thresh:
-            # Commit previous block
-            timestamp = format_timestamp(float(current_block_start))
-            block_content = " ".join(str(p) for p in current_text_parts)
-            blocks.append(f"{timestamp}\n{block_content}")
-            
-            # Start new block
-            current_block_start = seg['start']
-            current_text_parts = [seg['text']]
-        else:
-            # Continue current block
-            current_text_parts.append(seg['text'])
-        
-        last_end = seg['end']
-
-    # 3. Commit final block
-    if current_text_parts:
-        timestamp = format_timestamp(float(current_block_start))
-        block_content = " ".join(str(p) for p in current_text_parts)
-        blocks.append(f"{timestamp}\n{block_content}")
-
-    return "\n\n".join(blocks)
-
 def format_transcription_native(segments: list) -> str:
     """
-    Formats Whisper segments exactly as output by the model (with VAD enabled).
-    Format: [HH:MM:SS] Text
+    Formats Whisper segments exactly as output by the model.
     """
     if not segments:
         return ""
@@ -228,7 +168,6 @@ def format_transcription_native(segments: list) -> str:
         text = str(get_val(seg, 'text', '')).strip()
         if not text:
             continue
-            
         lines.append(f"{text}")
         
     return "\n\n".join(lines)
@@ -240,48 +179,144 @@ async def transcribe_with_gemini(local_filepath: str, duration: float, gemini_cl
 
     try:
         log("GEMINI", f"Uploading {os.path.basename(local_filepath)}...")
-        # 1. Upload
-        audio_file = await asyncio.to_thread(
-            gemini_client.files.upload, 
-            file=local_filepath
-        )
+        audio_file = await asyncio.to_thread(gemini_client.files.upload, file=local_filepath)
         
-        # 2. Wait for ACTIVE
-        log("GEMINI", "Waiting for file processing...")
         while True:
-            audio_file = await asyncio.to_thread(
-                gemini_client.files.get, 
-                name=audio_file.name
-            )
-            if audio_file.state.name == "ACTIVE":
-                break
+            audio_file = await asyncio.to_thread(gemini_client.files.get, name=audio_file.name)
+            if audio_file.state.name == "ACTIVE": break
             elif audio_file.state.name != "PROCESSING":
-                raise Exception(f"File failed to process. State: {audio_file.state.name}")
+                raise Exception(f"File failed to process: {audio_file.state.name}")
             await asyncio.sleep(2)
 
-        # 3. Generate Transcript
         prompt = (
-            "Transcribe this audio file accurately. Identify different speakers if possible. "
-            "Output only the transcript.\n"
-            "STRICT FORMATTING RULE:\n"
-            "- DO NOT include timestamps.\n"
-            "- Insert a double newline (\\n\\n) after every sentence/period.\n"
-            "- Do not change any words, order, or content.\n"
-            "- Simply ensure there is a blank line between every sentence for readability."
+            "Transcribe this audio file accurately. Identify speakers. "
+            "Output only the transcript. STRICT: Double newline (\\n\\n) after every sentence."
         )
 
-        log("GEMINI", f"Generating transcript for {duration:.1f}s audio...")
         response = await asyncio.to_thread(
             gemini_client.models.generate_content,
-            model="gemini-2.5-flash", # Use specific model for transcript
+            model="gemini-2.5-flash",
             contents=[audio_file, prompt]
         )
-
-        if not response.text:
-            return "Warning: Empty transcript returned by Gemini.", "N/A"
-
-        return response.text, "ID" # Assume ID as default or let gemini detect (but return ID for lang label)
-
+        return response.text, "ID"
     except Exception as e:
         log("ERROR", f"Gemini transcription failed: {e}")
-        return f"Error transcribing with Gemini: {e}", "N/A"
+        return f"Error: {e}", "N/A"
+
+# --- Video Slicer & YouTube Utilities ---
+
+async def fetch_video_metadata(url: str) -> dict:
+    """Fetches video metadata (title, duration, thumbnail) using yt-dlp."""
+    import json
+    cmd = ["yt-dlp", "--dump-json", "--no-playlist", url]
+    try:
+        process = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+        stdout, stderr = await process.communicate()
+        if process.returncode != 0: raise Exception(stderr.decode())
+        meta = json.loads(stdout.decode())
+        return {
+            "title": meta.get("title", "Unknown Video"),
+            "duration": float(meta.get("duration", 0)),
+            "thumbnail": meta.get("thumbnail"),
+            "original_url": url
+        }
+    except Exception as e:
+        log("ERROR", f"Failed to fetch metadata: {e}")
+        return {}
+
+async def download_video_optimal(url: str, output_folder: str) -> str:
+    """Downloads video in optimal MKV 1080p format."""
+    output_template = os.path.join(output_folder, "%(id)s.%(ext)s")
+    cmd = ["yt-dlp", "-f", "bestvideo[height<=1080][ext=mkv]+bestaudio[ext=m4a]/best[height<=1080]", "--merge-output-format", "mkv", "-o", output_template, url]
+    try:
+        log("FILE", f"Downloading video: {url}")
+        process = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+        await process.communicate()
+        for f in os.listdir(output_folder):
+            if f.endswith((".mkv", ".mp4", ".webm")): return os.path.join(output_folder, f)
+        return ""
+    except Exception as e:
+        log("ERROR", f"Download failed: {e}"); return ""
+
+async def get_video_highlights_csv(transcript: str, gemini_client) -> list[dict]:
+    """Uses Gemini to identify highlights and return them as a list of dicts (parsed from CSV)."""
+    if not gemini_client: return []
+    system_prompt = (
+        "You are a professional Social Media Viral Video Editor. "
+        "Analyze the transcript and identify 3-5 high-impact highlights. "
+        "For each, you can provide ONE or MORE segments to be stitched (Jump Cut). "
+        "Return ONLY a CSV with headers: title,start,end. Duration per title: 10-30s."
+    )
+    try:
+        log("GEMINI", "Analyzing highlights...")
+        response = await asyncio.to_thread(gemini_client.models.generate_content, model="gemini-2.5-flash", contents=[system_prompt, transcript])
+        csv_text = response.text.strip()
+        import csv
+        from io import StringIO
+        if csv_text.startswith("```"): csv_text = "\n".join(csv_text.split("\n")[1:-1])
+        reader = csv.DictReader(StringIO(csv_text))
+        highlights = []
+        for row in reader:
+            try: highlights.append({"title": row["title"].strip(), "start": float(row["start"]), "end": float(row["end"])})
+            except: continue
+        return highlights
+    except Exception as e:
+        log("ERROR", f"Highlight failed: {e}"); return []
+
+async def slice_video_clip(input_path: str, start: float, end: float, output_path: str, target_size_mb: float = None):
+    """Slices a video clip using FFmpeg with 1.25x speedup and silence removal."""
+    buffered_start = max(0, start - 0.5)
+    buffered_end = end + 0.5
+    duration = (buffered_end - buffered_start) / 1.25
+    filter_complex = "setpts=0.8*PTS,silenceremove=1:0:-50dB"
+    
+    cmd = ["ffmpeg", "-y", "-ss", str(buffered_start), "-to", str(buffered_end), "-i", input_path, "-vf", filter_complex, "-af", "atempo=1.25", "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-c:a", "aac", "-b:a", "128k", output_path]
+    
+    if target_size_mb:
+        target_bits = (target_size_mb * 8 * 1024 * 1024) * 0.9
+        bitrate_kbps = int((target_bits / duration) / 1000)
+        cmd = ["ffmpeg", "-y", "-ss", str(buffered_start), "-to", str(buffered_end), "-i", input_path, "-vf", filter_complex, "-af", "atempo=1.25", "-c:v", "libx264", "-preset", "veryfast", "-b:v", f"{bitrate_kbps}k", "-maxrate", f"{bitrate_kbps}k", "-bufsize", f"{bitrate_kbps*2}k", "-c:a", "aac", "-b:a", "128k", output_path]
+
+    try:
+        process = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+        await process.communicate()
+        return process.returncode == 0
+    except Exception as e:
+        log("ERROR", f"Clipping failed: {e}"); return False
+
+async def concatenate_video_segments(segment_paths: list[str], output_path: str) -> bool:
+    """Concatenates multiple segments into one final clip."""
+    if not segment_paths: return False
+    if len(segment_paths) == 1:
+        import shutil; shutil.copy(segment_paths[0], output_path); return True
+    
+    v_a_inputs = "".join([f"[{i}:v][{i}:a]" for i in range(len(segment_paths))])
+    filter_str = f"{v_a_inputs}concat=n={len(segment_paths)}:v=1:a=1[v][a]"
+    cmd = ["ffmpeg", "-y"] + [arg for p in segment_paths for arg in ("-i", p)] + ["-filter_complex", filter_str, "-map", "[v]", "-map", "[a]", "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-c:a", "aac", "-b:a", "128k", output_path]
+    try:
+        process = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+        await process.communicate(); return process.returncode == 0
+    except Exception as e:
+        log("ERROR", f"Concat failed: {e}"); return False
+
+async def send_video_adaptive(bot, chat_id: int, video_path: str, caption: str, reply_to_id: int = None):
+    """Sends video to Telegram, auto-compressing if it hits size limits."""
+    try:
+        with open(video_path, 'rb') as f:
+            await bot.send_video(chat_id, video=f, caption=caption, parse_mode="MARKDOWN", reply_to_message_id=reply_to_id)
+        return True
+    except Exception as e:
+        err_msg = str(e).lower()
+        if "file too large" in err_msg or "request entity too large" in err_msg:
+            log("FILE", "Telegram rejected file size. Attempting adaptive compression...")
+            actual_size_mb = os.path.getsize(video_path) / (1024 * 1024)
+            compressed_path = video_path.replace(".mp4", "_compressed.mp4")
+            cmd = ["ffmpeg", "-y", "-i", video_path, "-c:v", "libx264", "-preset", "veryfast", "-crf", "28", "-c:a", "aac", "-b:a", "96k", compressed_path]
+            process = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+            await process.communicate()
+            if process.returncode == 0:
+                with open(compressed_path, 'rb') as f:
+                    await bot.send_video(chat_id, video=f, caption=f"{caption}\n_(Optimized for size)_", parse_mode="MARKDOWN", reply_to_message_id=reply_to_id)
+                if os.path.exists(compressed_path): os.remove(compressed_path)
+                return True
+        log("ERROR", f"Failed to send video: {e}"); return False

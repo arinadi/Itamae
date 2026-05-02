@@ -32,6 +32,12 @@ class TranscriptionJob:
     job_id: str = field(default_factory=lambda: uuid.uuid4().hex[:8])
     status: str = "queued"
     _original_message: telegram.Message = field(repr=False, init=False)
+    
+    # New Video Slicer Fields
+    is_url_job: bool = False
+    thumbnail_url: Optional[str] = None
+    video_title: Optional[str] = None
+    original_url: Optional[str] = None
 
     @classmethod
     def from_message(cls, message: telegram.Message, local_path: str, duration: float):
@@ -50,6 +56,31 @@ class TranscriptionJob:
         else:
             job.author_display_name = "Unknown"
         log("JOB", f"[{job.job_id}] Created: {job.original_filename} (by {job.author_display_name})")
+        return job
+
+    @classmethod
+    def from_url(cls, message: telegram.Message, metadata: dict):
+        """Creates a job specifically from a URL sourcing."""
+        job = cls(
+            message_id=message.message_id,
+            chat_id=message.chat_id,
+            original_filename=f"{metadata.get('title', 'video')}.mkv",
+            local_filepath="", # Will be set after download
+            audio_duration=metadata.get('duration', 0.0),
+            is_url_job=True,
+            thumbnail_url=metadata.get('thumbnail'),
+            video_title=metadata.get('title'),
+            original_url=metadata.get('original_url')
+        )
+        job._original_message = message
+        if message.from_user:
+            job.author_display_name = message.from_user.first_name
+        elif message.chat and message.chat.title:
+            job.author_display_name = message.chat.title
+        else:
+            job.author_display_name = "URL Order"
+            
+        log("JOB", f"[{job.job_id}] Created from URL: {job.video_title}")
         return job
 
 
@@ -206,12 +237,48 @@ class JobManager:
         await self.job_queue.put(job)
         queue_position = self.job_queue.qsize()
         model_status_note = " ⏳" if not self.models_ready_event.is_set() else ""
-        content = f"✅ Queued: `{job.original_filename}` (#{queue_position}){model_status_note}"
+        
+        from utils import format_duration
+        duration_str = format_duration(job.audio_duration)
+        
+        # Build content text
+        if job.is_url_job:
+            content = (
+                f"✅ *Queued:* `{job.video_title}`\n"
+                f"⏱️ Duration: `{duration_str}`\n"
+                f"🔢 Position: `#{queue_position}`{model_status_note}"
+            )
+        else:
+            content = f"✅ *Queued:* `{job.original_filename}` (#{queue_position}){model_status_note}"
         
         # Add simpler cancel button
-        keyboard = [[InlineKeyboardButton("❌", callback_data=f"cancel_{job.job_id}")]]
-        
-        await self.app.bot.send_message(job.chat_id, content, parse_mode=ParseMode.MARKDOWN, reply_to_message_id=job.message_id, reply_markup=InlineKeyboardMarkup(keyboard))
+        keyboard = [[InlineKeyboardButton("❌ Cancel Order", callback_data=f"cancel_{job.job_id}")]]
+        reply_markup = InlineKeyboardMarkup(keyboard)
+
+        # Send with thumbnail if available
+        if job.thumbnail_url:
+            try:
+                await self.app.bot.send_photo(
+                    chat_id=job.chat_id,
+                    photo=job.thumbnail_url,
+                    caption=content,
+                    parse_mode=ParseMode.MARKDOWN,
+                    reply_to_message_id=job.message_id,
+                    reply_markup=reply_markup
+                )
+                log("JOB", f"[{job.job_id}] Queued at #{queue_position} (with thumbnail)")
+                return
+            except Exception as e:
+                log("ERROR", f"Failed to send thumbnail: {e}")
+
+        # Fallback to text message
+        await self.app.bot.send_message(
+            chat_id=job.chat_id, 
+            text=content, 
+            parse_mode=ParseMode.MARKDOWN, 
+            reply_to_message_id=job.message_id, 
+            reply_markup=reply_markup
+        )
         log("JOB", f"[{job.job_id}] Queued at #{queue_position}")
 
     def complete_job(self, job_id: str):
