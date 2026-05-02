@@ -1,0 +1,8 @@
+# Waiter Requirements (Ultra Light - Bot can go online in seconds)
+python-telegram-bot
+nest_asyncio
+werkzeug
+ffmpeg-python
+requests
+tqdm
+more-itertools

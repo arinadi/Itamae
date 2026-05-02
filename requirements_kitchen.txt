@@ -1,0 +1,6 @@
+# Kitchen Requirements (Heavy ML & AI tools - Installed in background)
+faster-whisper
+google-genai
+gradio>=4.0.0
+yt-dlp
+torch
