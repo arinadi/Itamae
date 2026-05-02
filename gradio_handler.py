@@ -101,7 +101,7 @@ async def _queue_gradio_job(file_path: str, filename: str, chat_id: int):
     """Add job to queue from Gradio upload."""
     try:
         import ffmpeg
-        from main import TranscriptionJob
+        from bot_core import TranscriptionJob
         
         # Probe audio duration
         probe = await asyncio.to_thread(ffmpeg.probe, file_path)
