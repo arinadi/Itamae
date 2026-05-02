@@ -134,15 +134,19 @@ def format_duration(seconds: float) -> str:
     minutes, remaining_seconds = divmod(int(seconds), 60)
     return f"{minutes}m {remaining_seconds:02d}s"
 
-def format_timestamp(seconds: float) -> str:
-    """Formats seconds into [HH:MM:SS] or [MM:SS]."""
+def format_timestamp(seconds: float, srt: bool = False) -> str:
+    """Formats seconds into [HH:MM:SS] or SRT format HH:MM:SS,mmm."""
     if not isinstance(seconds, (int, float)) or seconds < 0:
-        return "[00:00]"
+        return "00:00:00,000" if srt else "[00:00]"
     
-    seconds = int(seconds)
-    hours = seconds // 3600
-    minutes = (seconds % 3600) // 60
-    secs = seconds % 60
+    td = float(seconds)
+    hours = int(td // 3600)
+    minutes = int((td % 3600) // 60)
+    secs = int(td % 60)
+    millis = int((td - int(td)) * 1000)
+    
+    if srt:
+        return f"{hours:02d}:{minutes:02d}:{secs:02d},{millis:03d}"
     
     if hours > 0:
         return f"[{hours:02d}:{minutes:02d}:{secs:02d}]"
@@ -157,25 +161,34 @@ def get_val(seg, key, default=0.0):
     return default
 
 def format_transcription_native(segments: list) -> str:
-    """
-    Formats Whisper segments exactly as output by the model.
-    """
-    if not segments:
-        return ""
-    
+    """Formats Whisper segments exactly as output by the model."""
+    if not segments: return ""
     lines = []
     for seg in segments:
         text = str(get_val(seg, 'text', '')).strip()
-        if not text:
-            continue
+        if not text: continue
         lines.append(f"{text}")
-        
     return "\n\n".join(lines)
 
-async def transcribe_with_gemini(local_filepath: str, duration: float, gemini_client) -> tuple[str, str]:
-    """Transcribes audio using Gemini API (File API)."""
+def format_transcription_srt(segments: list) -> str:
+    """Formats Whisper segments into standard SRT format."""
+    if not segments: return ""
+    srt_lines = []
+    for i, seg in enumerate(segments, 1):
+        start = get_val(seg, 'start', 0.0)
+        end = get_val(seg, 'end', 0.0)
+        text = str(get_val(seg, 'text', '')).strip()
+        if not text: continue
+        
+        srt_lines.append(f"{i}")
+        srt_lines.append(f"{format_timestamp(start, True)} --> {format_timestamp(end, True)}")
+        srt_lines.append(f"{text}\n")
+    return "\n".join(srt_lines)
+
+async def transcribe_with_gemini(local_filepath: str, duration: float, gemini_client) -> tuple[str, str, list]:
+    """Transcribes audio using Gemini API (File API). Returns text, lang, and empty segments (mock)."""
     if not gemini_client:
-        return "Error: Gemini client not initialized.", "N/A"
+        return "Error: Gemini client not initialized.", "N/A", []
 
     try:
         log("GEMINI", f"Uploading {os.path.basename(local_filepath)}...")
@@ -198,10 +211,11 @@ async def transcribe_with_gemini(local_filepath: str, duration: float, gemini_cl
             model="gemini-2.5-flash",
             contents=[audio_file, prompt]
         )
-        return response.text, "ID"
+        # Gemini cloud doesn't give precise segments like Whisper, so we return empty segments list
+        return response.text, "ID", []
     except Exception as e:
         log("ERROR", f"Gemini transcription failed: {e}")
-        return f"Error: {e}", "N/A"
+        return f"Error: {e}", "N/A", []
 
 # --- Video Slicer & YouTube Utilities ---
 
@@ -239,13 +253,15 @@ async def download_video_optimal(url: str, output_folder: str) -> str:
         log("ERROR", f"Download failed: {e}"); return ""
 
 async def get_video_highlights_csv(transcript: str, gemini_client) -> list[dict]:
-    """Uses Gemini to identify highlights and return them as a list of dicts (parsed from CSV)."""
+    """Uses Gemini to identify highlights and return them as a list of dicts with 'reason'."""
     if not gemini_client: return []
     system_prompt = (
         "You are a professional Social Media Viral Video Editor. "
         "Analyze the transcript and identify 3-5 high-impact highlights. "
         "For each, you can provide ONE or MORE segments to be stitched (Jump Cut). "
-        "Return ONLY a CSV with headers: title,start,end. Duration per title: 10-30s."
+        "Return ONLY a CSV with headers: title,start,end,reason. "
+        "In 'reason', write a very short label for the vibe: 'Funny', 'Profound', 'Action', 'Wise', 'Angry', or 'Reactive'. "
+        "Duration per title: 10-30s."
     )
     try:
         log("GEMINI", "Analyzing highlights...")
@@ -257,7 +273,12 @@ async def get_video_highlights_csv(transcript: str, gemini_client) -> list[dict]
         reader = csv.DictReader(StringIO(csv_text))
         highlights = []
         for row in reader:
-            try: highlights.append({"title": row["title"].strip(), "start": float(row["start"]), "end": float(row["end"])})
+            try: highlights.append({
+                "title": row["title"].strip(), 
+                "start": float(row["start"]), 
+                "end": float(row["end"]),
+                "reason": row.get("reason", "Interesting").strip()
+            })
             except: continue
         return highlights
     except Exception as e:

@@ -23,7 +23,9 @@ from utils import (
     download_video_optimal,
     get_video_highlights_csv,
     slice_video_clip,
-    concatenate_video_segments
+    concatenate_video_segments,
+    send_video_adaptive,
+    format_transcription_srt
 )
 from bot_classes import TranscriptionJob, IdleMonitor, JobManager, FilesHandler
 
@@ -277,7 +279,7 @@ async def update_startup_message(gradio_url: str = None):
     except Exception as e:
         log("ERROR", f"Failed to update startup message: {e}")
 
-def run_transcription_process(job: TranscriptionJob) -> tuple[str, str]:
+def run_transcription_process(job: TranscriptionJob) -> tuple[str, str, list]:
     """Runs the blocking Whisper transcription in a separate thread."""
     from utils import log
     log("WHISPER", f"[{job.job_id}] Transcribing {job.original_filename}...")
@@ -302,7 +304,7 @@ def run_transcription_process(job: TranscriptionJob) -> tuple[str, str]:
     from utils import format_transcription_native
     formatted_text = format_transcription_native(segments)
     log("WHISPER", f"[{job.job_id}] Done: {len(segments)} segments, lang={info.language}")
-    return formatted_text, info.language if info.language else 'N/A'
+    return formatted_text, info.language if info.language else 'N/A', segments
 
 async def queue_processor():
     """The main worker loop that processes jobs from the queue one by one."""
@@ -331,18 +333,38 @@ async def queue_processor():
             await application.bot.send_message(job.chat_id, f"▶️ *Processing:* `{job.video_title or job.original_filename}` ({duration_str})...", parse_mode=ParseMode.MARKDOWN)
 
             # --- Phase B: AI Analysis ---
-            transcript_text, detected_language = await asyncio.to_thread(run_transcription_process, job)
+            transcript_text, detected_language, segments = await asyncio.to_thread(run_transcription_process, job)
             if job.status == 'cancelled': raise asyncio.CancelledError("Cancelled")
 
-            # Save/Send Transcript
+            # Save/Send Documents (Transcript & SRT)
             safe_name = secure_filename(os.path.splitext(job.original_filename)[0])[:50]
+            
+            # 1. Plain Text Transcript
             ts_filepath = os.path.join(TRANSCRIPT_FOLDER, f"{TRANSCRIPT_FILENAME_PREFIX}_{safe_name}.txt")
             with open(ts_filepath, "w", encoding="utf-8") as f: f.write(transcript_text)
             await application.bot.send_document(job.chat_id, document=open(ts_filepath, 'rb'), filename=os.path.basename(ts_filepath), caption=f"📄 Transcript: `{job.video_title or job.original_filename}`", reply_to_message_id=job.message_id)
 
-            # Highlights
+            # 2. SRT Subtitles
+            if segments:
+                srt_text = format_transcription_srt(segments)
+                srt_filepath = os.path.join(TRANSCRIPT_FOLDER, f"{safe_name}.srt")
+                with open(srt_filepath, "w", encoding="utf-8") as f: f.write(srt_text)
+                await application.bot.send_document(job.chat_id, document=open(srt_filepath, 'rb'), filename=os.path.basename(srt_filepath), caption=f"🎬 Subtitles (SRT): `{job.video_title or job.original_filename}`", reply_to_message_id=job.message_id)
+
+            # Highlights & CSV
             highlights = await get_video_highlights_csv(transcript_text, gemini_client)
             if highlights:
+                # Send raw CSV with reasons
+                import csv
+                from io import StringIO
+                csv_io = StringIO()
+                writer = csv.DictWriter(csv_io, fieldnames=["title", "start", "end", "reason"])
+                writer.writeheader()
+                writer.writerows(highlights)
+                csv_bytes = csv_io.getvalue().encode('utf-8')
+                csv_filename = f"{safe_name}.csv"
+                await application.bot.send_document(job.chat_id, document=csv_bytes, filename=csv_filename, caption=f"📊 Highlights Metadata (CSV): `{job.video_title or job.original_filename}`", reply_to_message_id=job.message_id)
+
                 from more_itertools import groupby_transform
                 grouped = []
                 for k, g in groupby_transform(highlights, key=lambda h: h["title"]): grouped.append((k, list(g)))
@@ -350,26 +372,29 @@ async def queue_processor():
                 await application.bot.send_message(job.chat_id, f"🔪 *Chef is slicing:* Identified `{len(grouped)}` highlights. Slicing now...", parse_mode=ParseMode.MARKDOWN)
                 
                 # --- Phase C: Slicing & Phase D: Delivery ---
-                for title, segments in grouped:
+                for title, segments_list in grouped:
                     seg_paths = []
+                    # Get reason from the first segment in the group
+                    reason_label = segments_list[0].get("reason", "Interesting")
+                    
                     try:
-                        for i, seg in enumerate(segments):
+                        for i, seg in enumerate(segments_list):
                             seg_path = os.path.join(UPLOAD_FOLDER, f"SEG_{i}_{uuid.uuid4().hex[:4]}.mp4")
                             if await slice_video_clip(job.local_filepath, seg["start"], seg["end"], seg_path):
                                 seg_paths.append(seg_path)
                         
                         final_clip = os.path.join(UPLOAD_FOLDER, f"CLIP_{secure_filename(title)}.mp4")
-                        # --- Phase D: Delivery ---
-                        from utils import send_video_adaptive
-                        success_send = await send_video_adaptive(
-                            application.bot, 
-                            job.chat_id, 
-                            final_clip, 
-                            f"🍣 *{title}*", 
-                            reply_to_id=job.message_id
-                        )
-                        if success_send:
-                            os.remove(final_clip)
+                        if await concatenate_video_segments(seg_paths, final_clip):
+                            # --- Phase D: Delivery ---
+                            success_send = await send_video_adaptive(
+                                application.bot, 
+                                job.chat_id, 
+                                final_clip, 
+                                f"🍣 *{title}*\n💡 Vibe: `{reason_label}`", 
+                                reply_to_id=job.message_id
+                            )
+                            if success_send: os.remove(final_clip)
+                    finally:
                         for p in seg_paths: 
                             if os.path.exists(p): os.remove(p)
 
