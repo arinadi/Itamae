@@ -13,22 +13,22 @@ def check_cuda():
         return False, "No GPU detected (nvidia-smi failed or missing)"
 
 def main():
-    print("🔍 TTB Smart Runner: Detecting Environment...")
+    print("🔍 TTB Smart Runner: Detecting Hardware...")
     
     is_gpu, gpu_reason = check_cuda()
     
-    if is_gpu:
-        mode = 'WHISPER'
-        print(f"🚀 {gpu_reason}. Transcription Mode: WHISPER")
-    else:
-        mode = 'GEMINI'
-        print(f"⚠️ {gpu_reason}. Transcription Mode: GEMINI (CPU)")
+    if not is_gpu:
+        print(f"❌ FATAL: {gpu_reason}")
+        print("This project requires a GPU for video processing/slicing.")
+        print("Please enable T4 GPU or higher in Colab Runtime settings.")
+        sys.exit(1)
 
-    # Set Environment Variable
+    print(f"🚀 {gpu_reason}. Hardware acceleration enabled.")
+    mode = 'WHISPER'
     os.environ['TRANSCRIPTION_MODE'] = mode
     
-    # Launch main.py
-    print(f"🚀 Starting TTB in {mode} Mode...")
+    # Launch bot_core.py
+    print(f"🚀 Starting Itamae in GPU Mode...")
     
     try:
         # Use sys.executable to ensure we use the same environment

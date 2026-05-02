@@ -251,19 +251,15 @@ async def update_startup_message(gradio_url: str = None):
     if not STARTUP_MESSAGE_ID: return
 
     ai_status = "✅ Kitchen Open" if models_ready_event.is_set() else "⏳ Preparing Kitchen..."
-    hardware_label = "NVIDIA GPU" if device == "cuda" else "Standard CPU"
+    hardware_label = "NVIDIA GPU"
     
-    if not gradio_url and GRADIO_AVAILABLE and gradio_handler and gradio_handler.gradio_app:
-        if hasattr(gradio_handler.gradio_app, 'share_url'):
-            gradio_url = gradio_handler.gradio_app.share_url
-
-    gradio_text = f"🌐 *Web UI:* {gradio_url}\n" if gradio_url else ""
+    # ...
     
     msg_text = (
         f"🤵 *Welcome to Itamae Sushi Bar*\n"
         f"I am your host. Feel free to send your audio/video files anytime.\n\n"
         f"🛠️ *Equipment:* `{hardware_label}`\n"
-        f"🤖 *AI Engine:* `{'Gemini Cloud' if MODE == 'GEMINI' else WHISPER_MODEL}`\n"
+        f"🤖 *AI Engine:* `{WHISPER_MODEL}`\n"
         f"📢 *Status:* {ai_status}\n"
         f"{gradio_text}"
         f"📂 *Order Limit:* `{BOT_FILESIZE_LIMIT}MB` per file"
