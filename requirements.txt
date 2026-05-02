@@ -1,8 +1,0 @@
-ffmpeg-python
-python-telegram-bot
-faster-whisper
-google-genai
-gradio>=4.0.0
-nest_asyncio
-yt-dlp
-werkzeug
