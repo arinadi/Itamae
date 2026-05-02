@@ -33,7 +33,7 @@ def main():
     else:
         # Need to clone
         print(f"⏳ Cloning {REPO_NAME}...")
-        token = os.environ.get('GITHUB_TOKEN')
+        token = os.environ.get('ITAMAE_GITHUB_TOKEN') or os.environ.get('GITHUB_TOKEN')
         clone_url = REPO_URL
         if token and "github.com" in clone_url:
             clone_url = clone_url.replace("https://", f"https://{token}@")
@@ -52,7 +52,7 @@ def main():
 
     # 3. Run the Bot
     print("🚀 Starting TTB...")
-    run_command("python start.py")
+    run_command("python launcher.py")
 
 if __name__ == "__main__":
     main()

@@ -1,4 +1,4 @@
-# 🔪 Itamae: The Master AI Slicer
+# 🔪 Itamae: Sushi Chef Clipper
 
 [![Google Colab](https://img.shields.io/badge/Run%20on-Google%20Colab-orange?logo=googlecolab)](https://colab.research.google.com/)
 [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
@@ -22,9 +22,11 @@ Powered by **OpenAI Whisper** and **Google Gemini**, Itamae analyzes long-form v
 
 1.  **Prepare your Secrets** 🔑:
     In Colab's **Secrets** tab, add:
-    - `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`
-    - `GEMINI_API_KEY` (Required for highlight analysis)
-    - `HF_TOKEN`, `GITHUB_TOKEN` (Optional)
+    - `ITAMAE_TELEGRAM_TOKEN`, `ITAMAE_ADMIN_CHAT_ID`
+    - `ITAMAE_GEMINI_KEY` (Required for highlight analysis)
+    - `ITAMAE_GITHUB_TOKEN` (Optional)
+
+    > **Why the prefix?** Using `ITAMAE_` (Namespacing) ensures these secrets don't conflict with other bots or projects in your Colab environment. It keeps your workspace organized and secure.
 
 2.  **Turn on the Stove** 🔥:
     Set Runtime to **T4 GPU** (*Runtime > Change runtime type*).
@@ -38,14 +40,15 @@ Powered by **OpenAI Whisper** and **Google Gemini**, Itamae analyzes long-form v
     from google.colab import userdata
 
     # 1. Prepare Ingredients (Load Secrets)
-    for key in ['TELEGRAM_BOT_TOKEN', 'TELEGRAM_CHAT_ID', 'GEMINI_API_KEY', 'GITHUB_TOKEN', 'HF_TOKEN']:
+    secrets = ['ITAMAE_TELEGRAM_TOKEN', 'ITAMAE_ADMIN_CHAT_ID', 'ITAMAE_GEMINI_KEY', 'ITAMAE_GITHUB_TOKEN']
+    for key in secrets:
         try:
             val = userdata.get(key)
             if val: os.environ[key] = str(val)
         except: pass
 
     # 2. Begin Slicing
-    !curl -s https://raw.githubusercontent.com/arinadi/Itamae/main/runner.py -o runner.py && python runner.py
+    !curl -s https://raw.githubusercontent.com/arinadi/Itamae/main/colab_setup.py -o colab_setup.py && python colab_setup.py
     ```
 
 ---
@@ -61,9 +64,9 @@ Powered by **OpenAI Whisper** and **Google Gemini**, Itamae analyzes long-form v
 
 ## 📂 Project Structure
 
-- `main.py`: The **Itamae**. Orchestrates transcription, analysis, and slicing.
-- `runner.py`: The **Apprentice**. Handles setup and environment preparation.
-- `start.py`: The **Dojo Manager**. Ensures all systems are operating at peak performance.
+- `bot_core.py`: The **Itamae**. Orchestrates transcription, analysis, and slicing.
+- `colab_setup.py`: The **Apprentice**. Handles setup and environment preparation.
+- `launcher.py`: The **Dojo Manager**. Ensures all systems are operating at peak performance.
 - `utils.py`: The **Master's Tools**. Helpers for analysis and formatting.
 
 ---
@@ -74,7 +77,7 @@ Powered by **OpenAI Whisper** and **Google Gemini**, Itamae analyzes long-form v
 git clone https://github.com/arinadi/Itamae.git
 cd Itamae
 bash setup_uv.sh
-python start.py
+python launcher.py
 ```
 
 ---

@@ -16,8 +16,9 @@ TTB is a Telegram bot designed for **Google Colab** and local systems that perfo
 ## Key Files
 | File | Purpose |
 | :--- | :--- |
-| **`start.py`** | **Smart Entry Point**. Environment detection and bot launcher. |
-| **`main.py`** | **Core Logic**. Telegram bot handlers and job worker. |
+| **`launcher.py`** | **Smart Entry Point**. Environment detection and bot launcher. |
+| **`bot_core.py`** | **Core Logic**. Telegram bot handlers and job worker. |
+| **`colab_setup.py`** | **Installation**. Smart installer for Colab environment. |
 | **`config.py`** | **Configuration**. Manages Secrets and Settings. |
 | **`utils.py`** | **Utilities**. Gemini Transcription & Summarization logic. |
 | **`bot_classes.py`**| **Data Structures**. `JobManager`, `FilesHandler` (with duration enforcement). |
@@ -26,8 +27,8 @@ TTB is a Telegram bot designed for **Google Colab** and local systems that perfo
 ## Critical Workflows
 
 ### 1. Startup & Initialization
--   **`start.py`**: Checks `torch.cuda` -> Sets mode -> Runs `main.py`.
--   **`main.post_init`**: Adjusts idle timers (5x longer in Gemini mode) and notifies admins.
+-   **`launcher.py`**: Checks `torch.cuda` -> Sets mode -> Runs `bot_core.py`.
+-   **`bot_core.post_init`**: Adjusts idle timers (5x longer in Gemini mode) and notifies admins.
 
 ### 2. Transcription Pipeline
 1.  **Receive**: `FilesHandler` checks limits (10 mins for Gemini mode).

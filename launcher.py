@@ -32,7 +32,7 @@ def main():
     
     try:
         # Use sys.executable to ensure we use the same environment
-        cmd = [sys.executable, "main.py"]
+        cmd = [sys.executable, "bot_core.py"]
         # In Colab/Terminal, we want to see the output in real-time
         process = subprocess.Popen(cmd)
         process.wait()
