@@ -336,15 +336,10 @@ async def queue_processor():
             transcript_text, detected_language, segments = await asyncio.to_thread(run_transcription_process, job)
             if job.status == 'cancelled': raise asyncio.CancelledError("Cancelled")
 
-            # Save/Send Documents (Transcript & SRT)
+            # Save/Send Subtitles (SRT)
             safe_name = secure_filename(os.path.splitext(job.original_filename)[0])[:50]
             
-            # 1. Plain Text Transcript
-            ts_filepath = os.path.join(TRANSCRIPT_FOLDER, f"{TRANSCRIPT_FILENAME_PREFIX}_{safe_name}.txt")
-            with open(ts_filepath, "w", encoding="utf-8") as f: f.write(transcript_text)
-            await application.bot.send_document(job.chat_id, document=open(ts_filepath, 'rb'), filename=os.path.basename(ts_filepath), caption=f"📄 Transcript: `{job.video_title or job.original_filename}`", reply_to_message_id=job.message_id)
-
-            # 2. SRT Subtitles
+            # Subtitles (SRT) - Primary Output
             if segments:
                 srt_text = format_transcription_srt(segments)
                 srt_filepath = os.path.join(TRANSCRIPT_FOLDER, f"{safe_name}.srt")
