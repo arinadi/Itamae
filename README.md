@@ -21,18 +21,19 @@ Transform long-form videos into high-paced, viral-ready clips for TikTok, Reels,
 
 ---
 
-## 🚀 Quick Setup (The Kitchen)
+## 🚀 Quick Setup (The One-Key Kitchen)
 
-1.  **Prepare your Secrets** 🔑:
-    In Colab's **Secrets** tab, add these unique ingredients:
-    - `ITAMAE_TELEGRAM_TOKEN` & `ITAMAE_ADMIN_CHAT_ID`
-    - `ITAMAE_GEMINI_KEY` (The Chef's Brain)
-    - `ITAMAE_GITHUB_TOKEN` (Optional)
+For maximum portability and speed, Itamae uses the **One-Key Kitchen** method. Set it up once on GitHub, and open your restaurant on any Colab account in seconds.
 
-    > **Namespacing Alert:** We use the `ITAMAE_` prefix to ensure your kitchen remains organized and conflict-free from other Colab projects.
+1.  **Prepare your Key** 🔑:
+    In Colab's **Secrets** tab, add only **TWO** ingredients:
+    - `ITAMAE_GITHUB_TOKEN`: (Your GitHub Personal Access Token)
+    - `ITAMAE_GIST_ID`: (The ID of your secret `.env.itamae` Gist)
+    
+    > **New to this?** Follow the [Full Setup Guide](guide.md) to create your secret key in 60 seconds.
 
 2.  **Heat the Stove** 🔥:
-    Set Runtime to **T4 GPU** or higher. *Itamae requires hardware acceleration for precision slicing.*
+    Set Runtime to **T4 GPU** or higher. *Itamae requires a GPU for precision slicing.*
 
 3.  **Invite the Chef** 🛎️:
     Run this cell to open the restaurant:
@@ -42,9 +43,8 @@ Transform long-form videos into high-paced, viral-ready clips for TikTok, Reels,
     import os
     from google.colab import userdata
 
-    # 1. Load the Menu (Secrets)
-    secrets = ['ITAMAE_TELEGRAM_TOKEN', 'ITAMAE_ADMIN_CHAT_ID', 'ITAMAE_GEMINI_KEY', 'ITAMAE_GITHUB_TOKEN']
-    for key in secrets:
+    # 1. Load the Master Key
+    for key in ['ITAMAE_GITHUB_TOKEN', 'ITAMAE_GIST_ID']:
         try:
             val = userdata.get(key)
             if val: os.environ[key] = str(val)
@@ -53,6 +53,18 @@ Transform long-form videos into high-paced, viral-ready clips for TikTok, Reels,
     # 2. Start Slicing
     !curl -s https://raw.githubusercontent.com/arinadi/Itamae/main/colab_setup.py -o colab_setup.py && python colab_setup.py
     ```
+
+<details>
+<summary><b>Alternative: Manual Kitchen Setup</b></summary>
+
+If you don't want to use GitHub Gist, you can add all secrets directly in Colab's Secrets tab:
+- `ITAMAE_TELEGRAM_TOKEN`
+- `ITAMAE_ADMIN_CHAT_ID`
+- `ITAMAE_GEMINI_KEY`
+- `ITAMAE_GITHUB_TOKEN` (Optional, for private forks)
+
+Then use the same launch code above.
+</details>
 
 ---
 
