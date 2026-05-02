@@ -1,6 +1,6 @@
-# 🔪 Master Chef's Guide: Setting Up Jiro ClipBot
+# 🔪 Master Chef's Guide: Setting Up Itamae Clipper
 
-Welcome to the kitchen! This guide will walk you through the process of setting up **Jiro ClipBot** (The Itamae) from scratch. Follow these steps to prepare your AI Sushi Chef for service.
+Welcome to the kitchen! This guide will walk you through the process of setting up **Itamae Clipper** from scratch. Follow these steps to prepare your AI Sushi Chef for service.
 
 ---
 
@@ -10,14 +10,14 @@ First, you need to create your bot on Telegram and get your secret token.
 
 1.  Open Telegram and search for **@BotFather**.
 2.  Send `/newbot` and follow the instructions.
-    *   **Suggested Name**: `Jiro ClipBot` or `Jiro: AI Sushi Chef`
-    *   **Suggested Username**: `@JiroClipBot` (or a variation)
+    *   **Suggested Name**: `Itamae Clipper` or `Itamae: AI Sushi Chef`
+    *   **Suggested Username**: `@ItamaeClipperBot` (or a variation)
 3.  **Save the API Token**: You will need this for the `ITAMAE_TELEGRAM_TOKEN` secret.
 
 ### 📜 Configure the Chef's Profile
 Tell BotFather to set these up for a professional look:
--   **/setabouttext**: `🍣 Jiro: Your AI Sushi Chef for Content. I slice long videos into viral masterpieces using Gemini AI & Whisper.`
--   **/setdescription**: `Welcome to Jiro's Kitchen! Send me a YouTube URL or Video File to get high-paced, jump-cut edited viral clips for TikTok/Reels.`
+-   **/setabouttext**: `🍣 Itamae: Your AI Sushi Chef for Content. I slice long videos into viral masterpieces using Gemini AI & Whisper.`
+-   **/setdescription**: `Welcome to Itamae's Kitchen! Send me a YouTube URL or Video File to get high-paced, jump-cut edited viral clips for TikTok/Reels.`
 -   **/setcommands**: Copy and paste the list below:
     ```text
     start - Open the restaurant and check status
@@ -30,7 +30,7 @@ Tell BotFather to set these up for a professional look:
 
 ## 🆔 Step 2: The VIP Table (Admin Chat ID)
 
-For security, Jiro only serves **one Master** (you). You need your unique Telegram Chat ID.
+For security, Itamae only serves **one Master** (you). You need your unique Telegram Chat ID.
 
 1.  Search for **@userinfobot** on Telegram.
 2.  Send any message to it.
@@ -40,7 +40,7 @@ For security, Jiro only serves **one Master** (you). You need your unique Telegr
 
 ## 🧠 Step 3: The Chef's Brain (Gemini API)
 
-Jiro uses Google Gemini to identify the best "prime cuts" from your video.
+Itamae uses Google Gemini to identify the best "prime cuts" from your video.
 
 1.  Go to [Google AI Studio](https://aistudio.google.com/).
 2.  Create a **New API Key**.
@@ -55,7 +55,7 @@ This is where the actual cooking (video processing) happens.
 1.  **Open the Notebook**: Open the project on Google Colab.
 2.  **Hardware Check (MANDATORY)**:
     *   Go to *Runtime > Change runtime type*.
-    *   Select **T4 GPU** (or better). Jiro cannot slice without a GPU.
+    *   Select **T4 GPU** (or better). Itamae cannot slice without a GPU.
 3.  **Add Secrets**:
     *   Click the **Key icon** (Secrets) on the left sidebar.
     *   Add the following keys exactly:
@@ -76,7 +76,7 @@ This is where the actual cooking (video processing) happens.
 
 ## 🍣 How to Order (Usage)
 
--   **YouTube Clips**: Just paste any YouTube URL. Jiro will fetch the metadata, show you the thumbnail, and start slicing.
+-   **YouTube Clips**: Just paste any YouTube URL. Itamae will fetch the metadata, show you the thumbnail, and start slicing.
 -   **Direct Files**: Send any video or audio file as an attachment.
 -   **The Result**: You will receive a high-quality transcript first, followed by several **10-30s clips** that are:
     *   Accelerated to **1.25x speed**.
@@ -88,33 +88,37 @@ This is where the actual cooking (video processing) happens.
 ## ⚠️ Troubleshooting (Kitchen Accidents)
 
 -   **"GPU Not Detected"**: Ensure you have selected a GPU runtime in Colab before starting.
--   **"File Too Large"**: Jiro will try to compress it automatically. If it still fails, try a shorter source video.
+-   **"File Too Large"**: Itamae will try to compress it automatically. If it still fails, try a shorter source video.
 -   **Bot Not Responding**: Ensure the Colab cell is still running and "Notebook access" is enabled for your secrets.
 
 ---
 
 ## 🌍 Advanced: One-Key Kitchen (Portable Setup)
 
-Tired of entering secrets every time you switch Colab accounts? Use the **One-Key Kitchen** method to load all secrets automatically from a private GitHub Gist.
+Tired of entering secrets every time you switch Colab accounts? Use the **One-Key Kitchen** method to load all secrets automatically from a private GitHub Gist using format **`.env.itamae`**.
 
-### 1. Create a Secret Gist
-1.  Go to [gist.github.com](https://gist.github.com/).
-2.  Create a new gist named `jiro_secrets.json`.
-3.  Paste your secrets in JSON format:
-    ```json
-    {
-      "ITAMAE_TELEGRAM_TOKEN": "your_bot_token",
-      "ITAMAE_ADMIN_CHAT_ID": "your_chat_id",
-      "ITAMAE_GEMINI_KEY": "your_gemini_key"
-    }
+### 1. Create a Secret Gist (via CLI)
+If you have **GitHub CLI (`gh`)** installed, you can do this in seconds:
+
+1.  Create your local secret file:
+    ```bash
+    cat <<EOF > .env.itamae
+    ITAMAE_TELEGRAM_TOKEN=your_bot_token
+    ITAMAE_ADMIN_CHAT_ID=your_chat_id
+    ITAMAE_GEMINI_KEY=your_gemini_key
+    EOF
     ```
-4.  Click **"Create secret gist"**.
-5.  **Copy the Gist ID** from the URL: `https://gist.github.com/username/<GIST_ID_HERE>`.
+2.  Create the Secret Gist:
+    ```bash
+    gh gist create .env.itamae --desc "Itamae Clipper Secrets" --public=false
+    ```
+3.  **Copy the Gist ID** from the output URL: `https://gist.github.com/username/<GIST_ID_HERE>`.
+4.  Safe cleanup: `rm .env.itamae`
 
 ### 2. Generate GitHub Token
 1.  Go to [GitHub Settings > Tokens (classic)](https://github.com/settings/tokens).
 2.  Generate a **New Token**.
-3.  Select the **`gist`** scope (and `repo` if your Itamae fork is private).
+3.  Select the **`gist`** scope.
 4.  Copy the token.
 
 ### 3. One-Time Colab Setup
@@ -122,7 +126,7 @@ Now, in any Colab account, you only need to add **TWO** secrets:
 -   `ITAMAE_GITHUB_TOKEN`: (Your GitHub Token)
 -   `ITAMAE_GIST_ID`: (Your Gist ID)
 
-Jiro will automatically fetch the rest of the ingredients from your GitHub Gist upon startup!
+Itamae will automatically fetch the rest of the ingredients from your GitHub Gist upon startup!
 
 ---
 *“A master chef serves only perfection. Happy slicing!”* 🔪🍣✨

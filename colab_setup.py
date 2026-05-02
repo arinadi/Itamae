@@ -27,20 +27,34 @@ def load_secrets_from_gist():
         headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"}
         response = requests.get(f"https://api.github.com/gists/{gist_id}", headers=headers, timeout=10)
         response.raise_for_status()
-        
         gist_data = response.json()
         secrets_loaded = 0
         for filename, file_info in gist_data.get('files', {}).items():
+            content = file_info['content']
+
+            # Case 1: JSON format
             if filename.endswith('.json'):
                 try:
-                    content = json.loads(file_info['content'])
-                    for key, value in content.items():
+                    data = json.loads(content)
+                    for key, value in data.items():
                         if key.startswith("ITAMAE_"):
                             os.environ[key] = str(value)
                             secrets_loaded += 1
-                except json.JSONDecodeError:
-                    print(f"⚠️ Gist Loader: Failed to parse {filename} as JSON.")
-        
+                except: pass
+
+            # Case 2: .env format (Key=Value) - Recommended
+            elif ".env" in filename:
+                for line in content.splitlines():
+                    line = line.strip()
+                    if not line or line.startswith("#") or "=" not in line:
+                        continue
+                    key, value = line.split("=", 1)
+                    key = key.strip()
+                    value = value.strip().strip('"').strip("'")
+                    if key.startswith("ITAMAE_"):
+                        os.environ[key] = value
+                        secrets_loaded += 1
+
         if secrets_loaded > 0:
             print(f"✅ Gist Loader: Successfully loaded {secrets_loaded} secrets from GitHub.")
         else:
