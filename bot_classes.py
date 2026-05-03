@@ -182,6 +182,7 @@ class JobManager:
 
     def signal_activity(self):
         """Explicitly signal activity to reset the idle timer."""
+        # log("IDLE", "Activity signaled") # Optional: Keep it quiet but functional
         self.idle_monitor.reset()
 
     def start_sourcing(self):
@@ -227,7 +228,11 @@ class JobManager:
 
     def is_idle(self) -> bool:
         """Bot is idle if no jobs are in queue, none processing, and no sourcing in progress."""
-        return self.job_queue.empty() and self.currently_processing is None and not self.job_registry and self._sourcing_count == 0
+        if not self.job_queue.empty(): return False
+        if self.currently_processing is not None: return False
+        if self.job_registry: return False
+        if self._sourcing_count > 0: return False
+        return True
 
     def get_queued_jobs(self) -> List[TranscriptionJob]:
         return [job for job in self.job_registry.values() if job.status == 'queued']

@@ -388,6 +388,7 @@ async def queue_processor():
                     reason_label = segments_list[0].get("reason", "Interesting")
                     try:
                         for i, seg in enumerate(segments_list):
+                            job_manager.signal_activity()
                             seg_path = os.path.join(UPLOAD_FOLDER, f"SEG_{i}_{uuid.uuid4().hex[:4]}.mp4")
                             if await slice_video_clip(job.local_filepath, seg["start"], seg["end"], seg_path):
                                 seg_paths.append(seg_path)
