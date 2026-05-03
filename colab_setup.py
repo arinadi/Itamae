@@ -19,54 +19,53 @@ def load_secrets():
     """
     # 1. Primary: Private Repository File (Option B)
     token = os.environ.get('ITAMAE_GITHUB_TOKEN') or os.environ.get('GITHUB_TOKEN')
-    config_url = os.environ.get('ITAMAE_CONFIG_URL')
+    config_repo = os.environ.get('ITAMAE_CONFIG_REPO') or os.environ.get('ITAMAE_CONFIG_URL')
     
-    if token and config_url:
-        print(f"🔐 Option B: Fetching private config from cloud...")
+    if token and config_repo:
+        print(f"🔐 Option B: Cloning private config repository...")
+        config_dir = "_config_temp"
         try:
-            url = config_url.split("?")[0] # Strip temporary tokens
-            headers = {"Authorization": f"token {token}"}
+            # Clean up previous attempts
+            if os.path.exists(config_dir): shutil.rmtree(config_dir)
             
-            # Convert Raw URLs to API URLs for reliable PAT authentication
-            if "raw.githubusercontent.com" in url:
-                # Format 1: raw.githubusercontent.com/user/repo/refs/heads/branch/path
-                # Format 2: raw.githubusercontent.com/user/repo/branch/path
-                p = url.replace("https://raw.githubusercontent.com/", "").split("/")
-                if len(p) >= 3:
-                    user, repo = p[0], p[1]
-                    if p[2] == "refs" and p[3] == "heads":
-                        branch, path = p[4], "/".join(p[5:])
-                    else:
-                        branch, path = p[2], "/".join(p[3:])
-                    url = f"https://api.github.com/repos/{user}/{repo}/contents/{path}?ref={branch}"
-            elif "github.com" in url and "/raw/" in url:
-                p = url.replace("https://github.com/", "").split("/")
-                # user/repo/raw/branch/path
-                if len(p) >= 4:
-                    user, repo, branch, path = p[0], p[1], p[3], "/".join(p[4:])
-                    url = f"https://api.github.com/repos/{user}/{repo}/contents/{path}?ref={branch}"
+            # Prepare authenticated clone URL
+            clone_url = config_repo
+            if "github.com" in clone_url and "@" not in clone_url:
+                proto, rest = clone_url.split("://", 1)
+                clone_url = f"{proto}://{token}@{rest}"
             
-            if "api.github.com" in url:
-                headers["Accept"] = "application/vnd.github.v3.raw"
+            # Clone (minimal depth)
+            res = os.system(f"git clone --depth 1 {clone_url} {config_dir} > /dev/null 2>&1")
+            if res != 0: raise Exception("Git clone failed")
             
-            response = requests.get(url, headers=headers, timeout=10)
-            response.raise_for_status()
-            content = response.text
+            # Look for secret file (prioritize .env.itamae, then .env)
+            env_file = None
+            for f in [".env.itamae", ".env"]:
+                path = os.path.join(config_dir, f)
+                if os.path.exists(path):
+                    env_file = path
+                    break
             
-            loaded = 0
-            for line in content.splitlines():
-                line = line.strip()
-                if not line or line.startswith("#") or "=" not in line: continue
-                k, v = line.split("=", 1)
-                k, v = k.strip(), v.strip().strip('"').strip("'")
-                if k.startswith("ITAMAE_"):
-                    os.environ[k] = v
-                    loaded += 1
-            if loaded > 0: 
-                print(f"✅ Option B: Loaded {loaded} secrets. Skipping Colab Secrets.")
-                return 
+            if env_file:
+                loaded = 0
+                with open(env_file, 'r') as f:
+                    for line in f:
+                        line = line.strip()
+                        if not line or line.startswith("#") or "=" not in line: continue
+                        k, v = line.split("=", 1)
+                        k, v = k.strip(), v.strip().strip('"').strip("'")
+                        if k.startswith("ITAMAE_"):
+                            os.environ[k] = v
+                            loaded += 1
+                if loaded > 0: 
+                    print(f"✅ Option B: Loaded {loaded} secrets from repository.")
+            
+            # Cleanup
+            shutil.rmtree(config_dir)
+            if env_file: return
         except Exception as e:
             print(f"⚠️ Option B failed: {e}")
+            if os.path.exists(config_dir): shutil.rmtree(config_dir)
 
 def main():
     start_time = time.time()
