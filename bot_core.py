@@ -89,11 +89,10 @@ if not all([TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID]):
     print("❌ ERROR: Core secrets (TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID) are missing.")
 
 if not GEMINI_API_KEY:
-    print("⚠️ WARNING: GEMINI_API_KEY not set. Summarization features will be disabled.")
+    print("⚠️ WARNING: GEMINI_API_KEY not set. Highlight analysis will be disabled.")
 
 # Constants
 TRANSCRIPT_FILENAME_PREFIX = "TS"
-SUMMARY_FILENAME_PREFIX = "AI"
 
 # ------------------------------------------------------------------------------
 # SECTION 2: ENVIRONMENT SETUP
@@ -167,11 +166,7 @@ async def initialize_models_background():
         # 3. Load Whisper (GPU Optimized with Batching)
         from faster_whisper import WhisperModel, BatchedInferencePipeline
         log("INIT", f"Loading Whisper ({WHISPER_MODEL}, {device})...")
-        
-        # Core Model
         base_model = await asyncio.to_thread(WhisperModel, WHISPER_MODEL, device=device, compute_type="float16")
-        
-        # Optimization: Wrap in BatchedInferencePipeline for 4x speedup
         model = BatchedInferencePipeline(model=base_model)
         log("INIT", "Whisper loaded with BatchedInferencePipeline (Turbo speed).")
 
@@ -185,7 +180,7 @@ async def initialize_models_background():
         try:
             import gradio_handler
             GRADIO_AVAILABLE = True
-            application.create_task(initialize_gradio_background())
+            asyncio.create_task(initialize_gradio_background())
         except ImportError:
             pass
 
@@ -314,7 +309,7 @@ def run_transcription_process(job: TranscriptionJob) -> tuple[str, str, list]:
         speech_pad_ms=VAD_SPEECH_PAD_MS
     )
     
-    # NOTE: BatchedInferencePipeline REQUIRES vad_filter=True or clip_timestamps
+    # NOTE: BatchedInferencePipeline REQUIRES vad_filter=True
     segments_generator, info = model.transcribe(
         job.local_filepath, 
         vad_filter=True, 
@@ -360,7 +355,7 @@ async def queue_processor():
             # Save/Send Subtitles (SRT)
             safe_name = secure_filename(os.path.splitext(job.original_filename)[0])[:50]
             
-            # Subtitles (SRT) - Primary Output
+            # Subtitles (SRT)
             if segments:
                 srt_text = format_transcription_srt(segments)
                 srt_filepath = os.path.join(TRANSCRIPT_FOLDER, f"{safe_name}.srt")
@@ -390,9 +385,7 @@ async def queue_processor():
                 # --- Phase C: Slicing & Phase D: Delivery ---
                 for title, segments_list in grouped:
                     seg_paths = []
-                    # Get reason from the first segment in the group
                     reason_label = segments_list[0].get("reason", "Interesting")
-                    
                     try:
                         for i, seg in enumerate(segments_list):
                             seg_path = os.path.join(UPLOAD_FOLDER, f"SEG_{i}_{uuid.uuid4().hex[:4]}.mp4")
@@ -496,13 +489,9 @@ async def main():
 
     async def post_init(application: Application):
         log("INIT", "Running post-init tasks...")
-        # Use asyncio.create_task for background workers to avoid PTBUserWarning
         asyncio.create_task(queue_processor())
         asyncio.create_task(initialize_models_background())
         if ENABLE_IDLE_MONITOR:
-            if MODE == 'GEMINI':
-                global IDLE_FIRST_ALERT_MINUTES, IDLE_FINAL_WARNING_MINUTES, IDLE_SHUTDOWN_MINUTES
-                IDLE_FIRST_ALERT_MINUTES *= 5; IDLE_FINAL_WARNING_MINUTES *= 5; IDLE_SHUTDOWN_MINUTES *= 5
             idle_monitor.start()
 
         startup_text = (f"🤵 *Welcome to Itamae Sushi Bar*\nI am your host. Feel free to send your audio/video files anytime.\n\n🛠️ *Equipment:* `Detecting...`\n🤖 *AI Engine:* `{WHISPER_MODEL}`\n📢 *Status:* ⏳ Preparing Kitchen...\n\n📂 *Order Limit:* `{BOT_FILESIZE_LIMIT}MB` per file")
@@ -529,28 +518,17 @@ async def main():
         for url in urls:
             if "youtube.com" in url or "youtu.be" in url:
                 status_msg = await update.effective_message.reply_text(f"🔍 *Sourcing Ingredients:* `{url}`", parse_mode=ParseMode.MARKDOWN)
-                
                 job_manager.start_sourcing()
-                try:
-                    metadata = await fetch_video_metadata(url)
-                finally:
-                    job_manager.stop_sourcing()
-
+                try: metadata = await fetch_video_metadata(url)
+                finally: job_manager.stop_sourcing()
                 if "error" in metadata:
                     error_type = metadata.get("error")
-                    if error_type == "GEO_BLOCKED":
-                        await status_msg.edit_text("🚫 *Chef's Note: Geo-Blocked*\nThis video is not available in the bot's region. Please **upload the video file directly** to the chat for slicing.")
-                    elif error_type == "PRIVATE":
-                        await status_msg.edit_text("🔒 *Chef's Note: Private Video*\nI cannot access private videos. Please make sure the video is public or upload the file directly.")
-                    elif error_type == "INVALID_URL":
-                        await status_msg.edit_text("❌ *Chef's Note: Invalid URL*\nThat doesn't look like a valid YouTube link. Please check and try again.")
-                    else:
-                        await status_msg.edit_text(f"❌ *Kitchen Accident:*\n`{metadata.get('message', 'Unknown error')}`")
+                    if error_type == "GEO_BLOCKED": await status_msg.edit_text("🚫 *Chef's Note: Geo-Blocked*\nThis video is not available in the bot's region. Please **upload the video file directly** to the chat for slicing.")
+                    elif error_type == "PRIVATE": await status_msg.edit_text("🔒 *Chef's Note: Private Video*\nI cannot access private videos. Please make sure the video is public or upload the file directly.")
+                    elif error_type == "INVALID_URL": await status_msg.edit_text("❌ *Chef's Note: Invalid URL*\nThat doesn't look like a valid YouTube link. Please check and try again.")
+                    else: await status_msg.edit_text(f"❌ *Kitchen Accident:*\n`{metadata.get('message', 'Unknown error')}`")
                     continue
-                
-                job = TranscriptionJob.from_url(update.effective_message, metadata)
-                await job_manager.add_job(job)
-                await status_msg.delete()
+                job = TranscriptionJob.from_url(update.effective_message, metadata); await job_manager.add_job(job); await status_msg.delete()
 
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND & chat_filter, handle_text_urls))
     
