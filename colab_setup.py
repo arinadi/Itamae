@@ -14,51 +14,72 @@ def run_command(cmd):
     return os.system(cmd)
 
 def load_secrets_from_gist():
-    """Loads project secrets from a private GitHub Gist if tokens are provided."""
-    token = os.environ.get('ITAMAE_GITHUB_TOKEN') or os.environ.get('GITHUB_TOKEN')
-    gist_id = os.environ.get('ITAMAE_GIST_ID')
+    """Loads project secrets from a private GitHub Gist with smart validation."""
+    token = os.environ.get('ITAMAE_GITHUB_TOKEN') or os.environ.get('GITHUB_TOKEN', '')
+    gist_id = os.environ.get('ITAMAE_GIST_ID', '')
+    
+    # --- Smart Swap Detection ---
+    # GitHub Tokens usually start with ghp_ or github_pat_
+    # Gist IDs are hexadecimal strings
+    if gist_id.startswith(('ghp_', 'github_pat_')) and not token.startswith(('ghp_', 'github_pat_')):
+        print("⚠️  DETECTED: Secrets might be swapped! Attempting to fix internally...")
+        token, gist_id = gist_id, token
     
     if not token or not gist_id:
-        print("ℹ️ Gist Loader: No token or Gist ID found. Skipping cloud secrets.")
+        print("ℹ️ Gist Loader: Missing token or Gist ID. Skipping cloud secrets.")
         return
 
-    print(f"⏳ Gist Loader: Fetching secrets from Gist {gist_id[:4]}...")
+    if not token.startswith(('ghp_', 'github_pat_')):
+        print("❌ Gist Loader: ITAMAE_GITHUB_TOKEN invalid format. Should start with 'ghp_'.")
+        return
+
+    print(f"⏳ Gist Loader: Fetching secrets from Gist {gist_id[:6]}...")
     try:
         headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"}
         response = requests.get(f"https://api.github.com/gists/{gist_id}", headers=headers, timeout=10)
+        
+        if response.status_code == 401:
+            print("❌ Gist Loader Error: 401 Unauthorized. Check if your GITHUB_TOKEN is correct and has 'gist' scope.")
+            return
+        elif response.status_code == 404:
+            print(f"❌ Gist Loader Error: 404 Not Found. Gist ID '{gist_id}' is incorrect or private gist inaccessible.")
+            return
+            
         response.raise_for_status()
         gist_data = response.json()
         secrets_loaded = 0
+        
         for filename, file_info in gist_data.get('files', {}).items():
             content = file_info['content']
-
-            # Case 1: JSON format
-            if filename.endswith('.json'):
-                try:
-                    data = json.loads(content)
-                    for key, value in data.items():
-                        if key.startswith("ITAMAE_"):
-                            os.environ[key] = str(value)
-                            secrets_loaded += 1
-                except: pass
-
-            # Case 2: .env format (Key=Value) - Recommended
-            elif ".env" in filename:
+            
+            # Case 1: .env format (Key=Value) - Recommended
+            if ".env" in filename or filename == ".env.itamae":
                 for line in content.splitlines():
                     line = line.strip()
-                    if not line or line.startswith("#") or "=" not in line:
-                        continue
-                    key, value = line.split("=", 1)
-                    key = key.strip()
-                    value = value.strip().strip('"').strip("'")
-                    if key.startswith("ITAMAE_"):
-                        os.environ[key] = value
+                    if not line or line.startswith("#") or "=" not in line: continue
+                    k, v = line.split("=", 1)
+                    k = k.strip()
+                    v = v.strip().strip('"').strip("'")
+                    if k.startswith("ITAMAE_"):
+                        os.environ[k] = v
                         secrets_loaded += 1
-
+            
+            # Case 2: JSON format
+            elif filename.endswith('.json'):
+                try:
+                    data = json.loads(content)
+                    for k, v in data.items():
+                        if k.startswith("ITAMAE_"):
+                            os.environ[k] = str(v)
+                            secrets_loaded += 1
+                except: pass
+        
         if secrets_loaded > 0:
-            print(f"✅ Gist Loader: Successfully loaded {secrets_loaded} secrets from GitHub.")
+            print(f"✅ Gist Loader: Successfully loaded {secrets_loaded} secrets.")
+            # Also set the correctly identified token for git operations later
+            os.environ['ITAMAE_GITHUB_TOKEN'] = token
         else:
-            print("⚠️ Gist Loader: No valid ITAMAE_ secrets found in Gist.")
+            print("⚠️ Gist Loader: No ITAMAE_ secrets found in Gist files.")
             
     except Exception as e:
         print(f"❌ Gist Loader Error: {e}")
@@ -75,26 +96,27 @@ def main():
 
     # 1. Clone or Update Repository
     if os.path.exists(".git"):
-        # We are already inside a git repo, assume it's the right one
         print(f"⏳ Updating current directory...")
         run_command("git fetch --depth 1 origin")
         run_command("git reset --hard origin/main")
     elif os.path.exists(REPO_NAME):
-        # Repo exists as a subdirectory
         print(f"⏳ Entering and updating {REPO_NAME}...")
         os.chdir(REPO_NAME)
         run_command("git fetch --depth 1 origin")
         run_command("git reset --hard origin/main")
     else:
-        # Need to clone
         print(f"⏳ Cloning {REPO_NAME}...")
+        # Use the validated token from Gist Loader if available
         token = os.environ.get('ITAMAE_GITHUB_TOKEN') or os.environ.get('GITHUB_TOKEN')
         clone_url = REPO_URL
         if token and "github.com" in clone_url:
+            # Mask token in print, but use it in command
+            print("🔑 Using GitHub Token for cloning...")
             clone_url = clone_url.replace("https://", f"https://{token}@")
         
         run_command(f"git clone --depth 1 {clone_url}")
-        os.chdir(REPO_NAME)
+        if os.path.exists(REPO_NAME):
+            os.chdir(REPO_NAME)
         
     print(f"✅ Code ready ({int(time.time()) - int(os.environ['INIT_START'])}s)")
 
@@ -106,7 +128,7 @@ def main():
     print(f"✅ Waiter is here ({int(time.time()) - int(os.environ['INIT_START'])}s)")
 
     # 3. Run the Bot
-    print("🚀 Starting TTB...")
+    print("🚀 Starting Itamae...")
     run_command("python launcher.py")
 
 if __name__ == "__main__":
