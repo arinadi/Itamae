@@ -1,12 +1,7 @@
 # Kitchen Requirements (Heavy ML & AI tools - Installed in background)
 
-# --- Core Fixes (Must be first for Colab compatibility) ---
-cryptography>=42.0.0
-pyOpenSSL>=24.0.0
-Pillow>=11.0.0
-
 # --- AI Tools ---
 faster-whisper
-google-genai
+google-generativeai
 gradio>=4.0.0
 torch

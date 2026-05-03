@@ -68,11 +68,15 @@ async def summarize_text(transcript: str, gemini_client, mode: str = 'WHISPER') 
               f"Tanggal: {datetime.now().strftime('%d %B %Y')}")
     try:
         log("GEMINI", f"Summarizing with {PRIMARY_MODEL}...")
-        res = await asyncio.to_thread(gemini_client.models.generate_content, model=PRIMARY_MODEL, contents=[prompt, transcript])
+        import google.generativeai as genai
+        model = genai.GenerativeModel(PRIMARY_MODEL)
+        res = await asyncio.to_thread(model.generate_content, [prompt, transcript])
         return res.text
     except Exception as e:
         log("ERROR", f"Summary fallback triggered: {e}")
-        res = await asyncio.to_thread(gemini_client.models.generate_content, model=FALLBACK_MODEL, contents=[prompt, transcript])
+        import google.generativeai as genai
+        model = genai.GenerativeModel(FALLBACK_MODEL)
+        res = await asyncio.to_thread(model.generate_content, [prompt, transcript])
         return res.text
 
 async def get_video_highlights_csv(transcript: str, gemini_client) -> list[dict]:
@@ -87,9 +91,11 @@ async def get_video_highlights_csv(transcript: str, gemini_client) -> list[dict]
                   "- 'title': Short clickbait title (max 5 words).\n"
                   "- Target 15-45s per title. No preamble, no markdown.")
     
-    async def _req(model):
-        log("GEMINI", f"Highlighting with {model}...")
-        res = await asyncio.to_thread(gemini_client.models.generate_content, model=model, contents=[sys_prompt, transcript])
+    async def _req(model_name):
+        log("GEMINI", f"Highlighting with {model_name}...")
+        import google.generativeai as genai
+        model = genai.GenerativeModel(model_name)
+        res = await asyncio.to_thread(model.generate_content, [sys_prompt, transcript])
         text = res.text.strip()
         if "```" in text:
             import re; m = re.search(r"```(?:csv|text)?\s*(.*?)\s*```", text, re.DOTALL)
