@@ -24,14 +24,12 @@ def load_secrets():
     if token and config_url:
         print(f"🔐 Option B: Fetching private config from cloud...")
         try:
-            # Inject token into URL for authentication (token@github.com)
-            url = config_url
-            if "github.com" in url or "githubusercontent.com" in url:
-                if "://" in url and "@" not in url:
-                    proto, rest = url.split("://", 1)
-                    url = f"{proto}://{token}@{rest}"
+            # Handle both direct raw URLs and API URLs
+            headers = {"Authorization": f"token {token}"}
+            if "api.github.com" in config_url:
+                headers["Accept"] = "application/vnd.github.v3.raw"
             
-            response = requests.get(url, timeout=10)
+            response = requests.get(config_url, headers=headers, timeout=10)
             response.raise_for_status()
             content = response.text
             
