@@ -182,7 +182,7 @@ class JobManager:
 
     def signal_activity(self):
         """Explicitly signal activity to reset the idle timer."""
-        # log("IDLE", "Activity signaled") # Optional: Keep it quiet but functional
+        # This keeps the kitchen open during long-running tasks
         self.idle_monitor.reset()
 
     def start_sourcing(self):

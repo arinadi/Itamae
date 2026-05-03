@@ -386,16 +386,26 @@ async def queue_processor():
                 for title, segments_list in grouped:
                     seg_paths = []
                     reason_label = segments_list[0].get("reason", "Interesting")
+                    log("JOB", f"[{job.job_id}] Processing highlight: {title} ({len(segments_list)} segments)")
                     try:
                         for i, seg in enumerate(segments_list):
                             job_manager.signal_activity()
+                            log("SLICE", f"[{job.job_id}] Slicing segment {i+1}/{len(segments_list)}: {seg['start']}s -> {seg['end']}s")
                             seg_path = os.path.join(UPLOAD_FOLDER, f"SEG_{i}_{uuid.uuid4().hex[:4]}.mp4")
                             if await slice_video_clip(job.local_filepath, seg["start"], seg["end"], seg_path):
                                 seg_paths.append(seg_path)
+                            else:
+                                log("ERROR", f"[{job.job_id}] Failed to slice segment {i+1}")
                         
+                        if not seg_paths:
+                            log("ERROR", f"[{job.job_id}] No segments sliced for {title}")
+                            continue
+
                         final_clip = os.path.join(UPLOAD_FOLDER, f"CLIP_{secure_filename(title)}.mp4")
+                        log("CONCAT", f"[{job.job_id}] Joining {len(seg_paths)} parts into {os.path.basename(final_clip)}")
                         if await concatenate_video_segments(seg_paths, final_clip):
                             # --- Phase D: Delivery ---
+                            log("SEND", f"[{job.job_id}] Delivering: {title}")
                             success_send = await send_video_adaptive(
                                 application.bot, 
                                 job.chat_id, 
@@ -403,10 +413,18 @@ async def queue_processor():
                                 f"🍣 *{title}*\n💡 Vibe: `{reason_label}`", 
                                 reply_to_id=job.message_id
                             )
-                            if success_send: os.remove(final_clip)
+                            if success_send: 
+                                log("SEND", f"[{job.job_id}] Successfully delivered {title}")
+                                os.remove(final_clip)
+                            else:
+                                log("ERROR", f"[{job.job_id}] Failed to send video {title}")
+                        else:
+                            log("ERROR", f"[{job.job_id}] Failed to concatenate segments for {title}")
                     finally:
                         for p in seg_paths: 
-                            if os.path.exists(p): os.remove(p)
+                            if os.path.exists(p): 
+                                try: os.remove(p)
+                                except Exception: pass
 
             job.status = "completed"
         except asyncio.CancelledError: pass
