@@ -14,31 +14,8 @@ def run_command(cmd):
     return os.system(cmd)
 
 def load_secrets():
-    """Loads secrets using Hierarchy: Colab UserData -> Private Repo File -> Env Vars."""
-    # 1. Primary: Google Colab Secrets (userdata)
-    try:
-        from google.colab import userdata
-        log_colab = False
-        keys_to_check = [
-            'ITAMAE_TELEGRAM_TOKEN', 'TELEGRAM_BOT_TOKEN',
-            'ITAMAE_ADMIN_CHAT_ID', 'TELEGRAM_CHAT_ID', 'ITAMAE_CHAT_ID',
-            'ITAMAE_GEMINI_KEY', 'GEMINI_API_KEY', 'ITAMAE_GEMINI_API_KEY',
-            'ITAMAE_GITHUB_TOKEN', 'GITHUB_TOKEN',
-            'ITAMAE_CONFIG_URL'
-        ]
-        log_colab = False
-        for key in keys_to_check:
-            try:
-                val = userdata.get(key)
-                if val: 
-                    os.environ[key] = str(val)
-                    log_colab = True
-            except: pass
-        if log_colab: print("✅ Secrets: Loaded from Google Colab UserData.")
-    except (ImportError, ModuleNotFoundError):
-        pass
-
-    # 2. Advanced Fallback: Private Repository File (Option B)
+    """Loads secrets using Hierarchy: Private Repo File (Option B) OR Colab UserData."""
+    # 1. Primary: Private Repository File (Option B)
     token = os.environ.get('ITAMAE_GITHUB_TOKEN') or os.environ.get('GITHUB_TOKEN')
     config_url = os.environ.get('ITAMAE_CONFIG_URL')
     
@@ -63,9 +40,27 @@ def load_secrets():
                 if k.startswith("ITAMAE_"):
                     os.environ[k] = v
                     loaded += 1
-            if loaded > 0: print(f"✅ Option B: Loaded {loaded} secrets from private repo.")
+            if loaded > 0: 
+                print(f"✅ Option B: Loaded {loaded} secrets. Skipping Colab Secrets.")
+                return 
         except Exception as e:
             print(f"⚠️ Option B failed: {e}")
+
+    # 2. Fallback: Google Colab Secrets (userdata)
+    try:
+        from google.colab import userdata
+        keys_to_check = ['ITAMAE_TELEGRAM_TOKEN', 'ITAMAE_ADMIN_CHAT_ID', 'ITAMAE_GEMINI_KEY', 'ITAMAE_GITHUB_TOKEN', 'ITAMAE_CONFIG_URL']
+        log_colab = False
+        for key in keys_to_check:
+            try:
+                val = userdata.get(key)
+                if val: 
+                    os.environ[key] = str(val)
+                    log_colab = True
+            except: pass
+        if log_colab: print("✅ Secrets: Loaded from Google Colab UserData.")
+    except:
+        pass
 
 def main():
     start_time = time.time()

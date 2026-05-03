@@ -87,7 +87,7 @@ except ImportError:
 
 # Validation
 if not all([TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID]):
-    print("❌ ERROR: Core secrets (TOKEN, CHAT_ID) are missing. Check your configuration.")
+    print("❌ ERROR: Core secrets (TELEGRAM_BOT_TOKEN, TELEGRAM_CHAT_ID) are missing.")
 
 if not GEMINI_API_KEY:
     print("⚠️ WARNING: GEMINI_API_KEY not set. Highlight analysis will be disabled.")
@@ -529,12 +529,7 @@ async def main():
     global application, idle_monitor, job_manager, files_handler
     print("🚀 Starting Main Application...")
     request = HTTPXRequest(read_timeout=60.0, connect_timeout=20.0, write_timeout=30.0, pool_timeout=30.0, connection_pool_size=8)
-    if not TELEGRAM_BOT_TOKEN or not TELEGRAM_CHAT_ID:
-        msg = "❌ FATAL: Missing core secrets!\n"
-        if not TELEGRAM_BOT_TOKEN: msg += " - TELEGRAM_BOT_TOKEN is missing.\n"
-        if not TELEGRAM_CHAT_ID: msg += " - TELEGRAM_CHAT_ID is missing.\n"
-        msg += "\nEnsure these are set in your Colab Secrets (key icon) or .env file."
-        sys.exit(msg)
+    if not TELEGRAM_BOT_TOKEN: sys.exit("❌ FATAL: No TELEGRAM_BOT_TOKEN found. Exiting.")
 
     async def post_init(application: Application):
         log("INIT", "Running post-init tasks...")
@@ -593,6 +588,4 @@ if __name__ == "__main__":
     except KeyboardInterrupt: print("🛑 Bot stopped by user.")
     except Exception as e: print(f"❌ Application crashed: {e}")
     finally:
-        if IS_COLAB:
-            try: runtime.unassign()
-            except: pass
+        if IS_COLAB: runtime.unassign()
