@@ -496,8 +496,9 @@ async def main():
 
     async def post_init(application: Application):
         log("INIT", "Running post-init tasks...")
-        application.create_task(queue_processor())
-        application.create_task(initialize_models_background())
+        # Use asyncio.create_task for background workers to avoid PTBUserWarning
+        asyncio.create_task(queue_processor())
+        asyncio.create_task(initialize_models_background())
         if ENABLE_IDLE_MONITOR:
             if MODE == 'GEMINI':
                 global IDLE_FIRST_ALERT_MINUTES, IDLE_FINAL_WARNING_MINUTES, IDLE_SHUTDOWN_MINUTES
