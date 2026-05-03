@@ -14,7 +14,9 @@ def run_command(cmd):
     return os.system(cmd)
 
 def load_secrets():
-    """Loads secrets using Hierarchy: Private Repo File (Option B) OR Colab UserData."""
+    """Loads secrets using Hierarchy: Private Repo File (Option B) OR Colab UserData.
+    Note: For Colab, secrets are best loaded in the notebook cell for reliable process inheritance.
+    """
     # 1. Primary: Private Repository File (Option B)
     token = os.environ.get('ITAMAE_GITHUB_TOKEN') or os.environ.get('GITHUB_TOKEN')
     config_url = os.environ.get('ITAMAE_CONFIG_URL')

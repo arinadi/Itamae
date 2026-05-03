@@ -39,6 +39,16 @@ In your **Google Colab**, click the **Secrets** tab (key icon 🔑) and add thes
     ```python
     # @title 🔪 Launch Itamae Slicer
     import os
+    from google.colab import userdata
+
+    # 1. Load Ingredients into Kitchen Environment
+    for key in ['ITAMAE_TELEGRAM_TOKEN', 'ITAMAE_ADMIN_CHAT_ID', 'ITAMAE_GEMINI_KEY', 'ITAMAE_GITHUB_TOKEN', 'ITAMAE_CONFIG_URL']:
+        try:
+            val = userdata.get(key)
+            if val: os.environ[key] = str(val)
+        except: pass
+
+    # 2. Invite the Chef
     !curl -s https://raw.githubusercontent.com/arinadi/Itamae/main/colab_setup.py -o colab_setup.py && python colab_setup.py
     ```
 
