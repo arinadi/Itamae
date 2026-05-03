@@ -29,14 +29,13 @@ def load_secrets():
             if os.path.exists(config_dir): shutil.rmtree(config_dir)
             
             # Prepare authenticated clone URL
-            clone_url = config_repo
-            if "github.com" in clone_url and "@" not in clone_url:
-                proto, rest = clone_url.split("://", 1)
-                clone_url = f"{proto}://{token}@{rest}"
+            auth_url = config_repo
+            if "github.com" in auth_url and "@" not in auth_url:
+                auth_url = auth_url.replace("://", f"://{token}@")
             
-            # Clone (minimal depth)
-            res = os.system(f"git clone --depth 1 {clone_url} {config_dir} > /dev/null 2>&1")
-            if res != 0: raise Exception("Git clone failed")
+            # Clone (minimal depth) - Show output for debugging
+            res = run_command(f"git clone --depth 1 {auth_url} {config_dir}")
+            if res != 0: raise Exception("Git clone failed. Check your ITAMAE_CONFIG_REPO URL and ITAMAE_GITHUB_TOKEN.")
             
             # Look for secret file (prioritize .env.itamae, then .env)
             env_file = None
