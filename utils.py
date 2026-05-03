@@ -219,16 +219,24 @@ async def transcribe_with_gemini(local_filepath: str, duration: float, gemini_cl
 
 # --- Video Slicer & YouTube Utilities ---
 
-async def fetch_video_metadata(url: str) -> dict:
-    """Fetches video metadata (title, duration, thumbnail) using yt-dlp with smart error handling."""
+async def fetch_video_metadata(url: str, use_bypass: bool = False) -> dict:
+    """Fetches video metadata using yt-dlp with auto geo-bypass fallback."""
     import json
-    cmd = ["yt-dlp", "--dump-json", "--no-playlist", url]
+    cmd = ["yt-dlp", "--dump-json", "--no-playlist"]
+    if use_bypass:
+        cmd.append("--geo-bypass")
+    cmd.append(url)
+    
     try:
         process = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
         stdout, stderr = await process.communicate()
         
         if process.returncode != 0:
             err_text = stderr.decode().lower()
+            if not use_bypass and ("available in your country" in err_text or "geo-restricted" in err_text):
+                log("FILE", "Geo-restriction detected. Retrying with --geo-bypass...")
+                return await fetch_video_metadata(url, use_bypass=True)
+                
             if "available in your country" in err_text:
                 return {"error": "GEO_BLOCKED", "message": "Video is geo-restricted in the bot's region."}
             if "private video" in err_text:
@@ -248,14 +256,26 @@ async def fetch_video_metadata(url: str) -> dict:
         log("ERROR", f"Failed to fetch metadata: {e}")
         return {"error": "UNKNOWN", "message": str(e)}
 
-async def download_video_optimal(url: str, output_folder: str) -> str:
-    """Downloads video in optimal MKV 1080p format."""
+async def download_video_optimal(url: str, output_folder: str, use_bypass: bool = False) -> str:
+    """Downloads video in optimal MKV 1080p format with geo-bypass fallback."""
     output_template = os.path.join(output_folder, "%(id)s.%(ext)s")
-    cmd = ["yt-dlp", "-f", "bestvideo[height<=1080][ext=mkv]+bestaudio[ext=m4a]/best[height<=1080]", "--merge-output-format", "mkv", "-o", output_template, url]
+    cmd = ["yt-dlp", "-f", "bestvideo[height<=1080][ext=mkv]+bestaudio[ext=m4a]/best[height<=1080]", "--merge-output-format", "mkv", "-o", output_template]
+    if use_bypass:
+        cmd.append("--geo-bypass")
+    cmd.append(url)
+    
     try:
-        log("FILE", f"Downloading video: {url}")
+        log("FILE", f"Downloading video (Bypass={use_bypass}): {url}")
         process = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
-        await process.communicate()
+        stdout, stderr = await process.communicate()
+        
+        if process.returncode != 0:
+            err_text = stderr.decode().lower()
+            if not use_bypass and ("available in your country" in err_text or "geo-restricted" in err_text):
+                log("FILE", "Geo-restriction during download. Retrying with --geo-bypass...")
+                return await download_video_optimal(url, output_folder, use_bypass=True)
+            raise Exception(err_text)
+            
         for f in os.listdir(output_folder):
             if f.endswith((".mkv", ".mp4", ".webm")): return os.path.join(output_folder, f)
         return ""
