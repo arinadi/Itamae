@@ -544,6 +544,8 @@ async def main():
                     continue
                 
                 job = TranscriptionJob.from_url(update.effective_message, metadata)
+                await job_manager.add_job(job)
+                await status_msg.delete()
 
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND & chat_filter, handle_text_urls))
     
