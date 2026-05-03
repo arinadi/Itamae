@@ -315,10 +315,10 @@ async def get_video_highlights_csv(transcript: str, gemini_client) -> list[dict]
         "STRICT: No preamble, no markdown, no other text. Only the CSV."
     )
     try:
-        log("GEMINI", "Analyzing highlights with gemini-1.5-flash...")
+        log("GEMINI", "Analyzing highlights with gemini-2.5-flash...")
         response = await asyncio.to_thread(
             gemini_client.models.generate_content, 
-            model="gemini-1.5-flash", 
+            model="gemini-2.5-flash", 
             contents=[system_prompt, transcript]
         )
         
