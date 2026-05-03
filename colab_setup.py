@@ -19,7 +19,15 @@ def load_secrets():
     try:
         from google.colab import userdata
         log_colab = False
-        for key in ['ITAMAE_TELEGRAM_TOKEN', 'ITAMAE_ADMIN_CHAT_ID', 'ITAMAE_GEMINI_KEY', 'ITAMAE_GITHUB_TOKEN', 'ITAMAE_CONFIG_URL', 'ITAMAE_GIST_ID']:
+        keys_to_check = [
+            'ITAMAE_TELEGRAM_TOKEN', 'TELEGRAM_BOT_TOKEN',
+            'ITAMAE_ADMIN_CHAT_ID', 'TELEGRAM_CHAT_ID', 'ITAMAE_CHAT_ID',
+            'ITAMAE_GEMINI_KEY', 'GEMINI_API_KEY', 'ITAMAE_GEMINI_API_KEY',
+            'ITAMAE_GITHUB_TOKEN', 'GITHUB_TOKEN',
+            'ITAMAE_CONFIG_URL'
+        ]
+        log_colab = False
+        for key in keys_to_check:
             try:
                 val = userdata.get(key)
                 if val: 
