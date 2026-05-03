@@ -147,7 +147,13 @@ async def initialize_models_background():
             
             # Install Deno for yt-dlp (YouTube extraction)
             log("INIT", "Installing Deno JS runtime...")
-            await (await asyncio.create_subprocess_exec("curl", "-fsSL", "https://deno.land/install.sh", "|", "sh", is_background=False)).wait()
+            deno_install_cmd = "curl -fsSL https://deno.land/install.sh | sh"
+            process = await asyncio.create_subprocess_shell(
+                deno_install_cmd,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE
+            )
+            await process.wait()
             os.environ["PATH"] = f"{os.path.expanduser('~/.deno/bin')}:{os.environ['PATH']}"
             
             log("INIT", "Kitchen equipment arrived.")
