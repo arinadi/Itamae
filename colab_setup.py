@@ -14,8 +14,8 @@ def run_command(cmd):
     return os.system(cmd)
 
 def load_secrets():
-    """Loads secrets using Hierarchy: Private Repo File (Option B) OR Colab UserData.
-    Note: For Colab, secrets are best loaded in the notebook cell for reliable process inheritance.
+    """Loads secrets using Option B (Private Repository File).
+    Assumes other core secrets are already set in the environment by the Colab cell.
     """
     # 1. Primary: Private Repository File (Option B)
     token = os.environ.get('ITAMAE_GITHUB_TOKEN') or os.environ.get('GITHUB_TOKEN')
@@ -47,22 +47,6 @@ def load_secrets():
                 return 
         except Exception as e:
             print(f"⚠️ Option B failed: {e}")
-
-    # 2. Fallback: Google Colab Secrets (userdata)
-    try:
-        from google.colab import userdata
-        keys_to_check = ['ITAMAE_TELEGRAM_TOKEN', 'ITAMAE_ADMIN_CHAT_ID', 'ITAMAE_GEMINI_KEY', 'ITAMAE_GITHUB_TOKEN', 'ITAMAE_CONFIG_URL']
-        log_colab = False
-        for key in keys_to_check:
-            try:
-                val = userdata.get(key)
-                if val: 
-                    os.environ[key] = str(val)
-                    log_colab = True
-            except: pass
-        if log_colab: print("✅ Secrets: Loaded from Google Colab UserData.")
-    except:
-        pass
 
 def main():
     start_time = time.time()
