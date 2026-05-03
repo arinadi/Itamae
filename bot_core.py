@@ -141,7 +141,7 @@ async def initialize_models_background():
             await send_telegram_notification(application, "📦 *Kitchen Update:* Installing GPU-accelerated libraries and JS runtime. Cooking will start shortly.")
             
             await (await asyncio.create_subprocess_exec("pip", "install", "uv", "-q")).wait()
-            await (await asyncio.create_subprocess_exec("uv", "pip", "install", "--system", "-r", "requirements_kitchen.txt", "-q")).wait()
+            await (await asyncio.create_subprocess_exec("uv", "pip", "install", "--system", "-r", "requirements_kitchen.txt", "-U", "-q")).wait()
             
             # Install Deno for yt-dlp (YouTube extraction)
             log("INIT", "Installing Deno JS runtime...")

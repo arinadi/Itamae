@@ -134,21 +134,31 @@ async def fetch_video_metadata(url: str) -> dict:
 
 async def download_video_optimal(url: str, folder: str, job_id: str) -> str:
     tmpl = os.path.join(folder, f"{job_id}.%(ext)s")
-    # Add flags for subtitles: manual and auto-generated, converted to SRT
     from config import Config
-    cmd = ["yt-dlp", "-f", "bestvideo[height<=1080][ext=mkv]+bestaudio[ext=m4a]/best[height<=1080]", 
-           "--merge-output-format", "mkv", "-o", tmpl, "--print", "after_move:filepath", "--geo-bypass",
+    cmd = ["yt-dlp", "-f", "bestvideo[height<=1080]+bestaudio/best[height<=1080]", 
+           "--merge-output-format", "mkv", "-o", tmpl, "--print", "after_move:filepath", "--geo-bypass", "--no-playlist",
            "--write-subs", "--write-auto-subs", "--sub-langs", Config.SUBTITLE_LANGS, "--max-subs", "1", "--convert-subs", "srt", url]
     try:
         log("FILE", f"Downloading: {url}")
         proc = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
-        out, _ = await proc.communicate()
+        out, err = await proc.communicate()
         path = out.decode().strip()
-        if path and os.path.exists(path): return path
+        
+        if proc.returncode == 0 and path and os.path.exists(path):
+            return path
+        
+        # Fallback check if --print failed but file exists
         for f in os.listdir(folder):
-            if f.startswith(job_id) and f.endswith((".mkv", ".mp4", ".webm")): return os.path.join(folder, f)
+            if f.startswith(job_id) and f.endswith((".mkv", ".mp4", ".webm")):
+                return os.path.join(folder, f)
+        
+        if err:
+            error_msg = err.decode().strip().splitlines()[-1] if err else "Unknown error"
+            log("ERROR", f"Download failed: {error_msg}")
         return ""
-    except Exception as e: log("ERROR", f"Download fail: {e}"); return ""
+    except Exception as e:
+        log("ERROR", f"Download exception: {e}")
+        return ""
 
 async def slice_video_clip(in_path: str, start: float, end: float, out_path: str, mb_limit: float = None):
     dur = (end - start + 1) / 1.25
