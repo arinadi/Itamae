@@ -14,11 +14,9 @@ from typing import Optional
 import config
 from config import Config
 from utils import (
-    summarize_text, 
     format_duration, 
     log, 
     get_runtime,
-    transcribe_with_gemini,
     fetch_video_metadata,
     download_video_optimal,
     get_video_highlights_csv,
