@@ -140,10 +140,16 @@ async def initialize_models_background():
             from faster_whisper import WhisperModel
         except ImportError:
             log("INIT", "Kitchen equipment missing. Ordering now (~1 min)...")
-            await send_telegram_notification(application, "📦 *Kitchen Update:* Installing GPU-accelerated libraries. Cooking will start shortly.")
+            await send_telegram_notification(application, "📦 *Kitchen Update:* Installing GPU-accelerated libraries and JS runtime. Cooking will start shortly.")
             
             await (await asyncio.create_subprocess_exec("pip", "install", "uv", "-q")).wait()
             await (await asyncio.create_subprocess_exec("uv", "pip", "install", "--system", "-r", "requirements_kitchen.txt", "-q")).wait()
+            
+            # Install Deno for yt-dlp (YouTube extraction)
+            log("INIT", "Installing Deno JS runtime...")
+            await (await asyncio.create_subprocess_exec("curl", "-fsSL", "https://deno.land/install.sh", "|", "sh", is_background=False)).wait()
+            os.environ["PATH"] = f"{os.path.expanduser('~/.deno/bin')}:{os.environ['PATH']}"
+            
             log("INIT", "Kitchen equipment arrived.")
 
         # 2. Hard GPU check
@@ -513,8 +519,19 @@ async def main():
             if "youtube.com" in url or "youtu.be" in url:
                 status_msg = await update.effective_message.reply_text(f"🔍 *Sourcing Ingredients:* `{url}`", parse_mode=ParseMode.MARKDOWN)
                 metadata = await fetch_video_metadata(url)
-                if not metadata: await status_msg.edit_text("❌ Failed to fetch metadata."); continue
-                job = TranscriptionJob.from_url(update.effective_message, metadata); await job_manager.add_job(job); await status_msg.delete()
+                if "error" in metadata:
+                    error_type = metadata.get("error")
+                    if error_type == "GEO_BLOCKED":
+                        await status_msg.edit_text("🚫 *Chef's Note: Geo-Blocked*\nThis video is not available in the bot's region. Please **upload the video file directly** to the chat for slicing.")
+                    elif error_type == "PRIVATE":
+                        await status_msg.edit_text("🔒 *Chef's Note: Private Video*\nI cannot access private videos. Please make sure the video is public or upload the file directly.")
+                    elif error_type == "INVALID_URL":
+                        await status_msg.edit_text("❌ *Chef's Note: Invalid URL*\nThat doesn't look like a valid YouTube link. Please check and try again.")
+                    else:
+                        await status_msg.edit_text(f"❌ *Kitchen Accident:*\n`{metadata.get('message', 'Unknown error')}`")
+                    continue
+                
+                job = TranscriptionJob.from_url(update.effective_message, metadata)
 
     application.add_handler(MessageHandler(filters.TEXT & ~filters.COMMAND & chat_filter, handle_text_urls))
     

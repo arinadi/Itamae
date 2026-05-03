@@ -220,13 +220,23 @@ async def transcribe_with_gemini(local_filepath: str, duration: float, gemini_cl
 # --- Video Slicer & YouTube Utilities ---
 
 async def fetch_video_metadata(url: str) -> dict:
-    """Fetches video metadata (title, duration, thumbnail) using yt-dlp."""
+    """Fetches video metadata (title, duration, thumbnail) using yt-dlp with smart error handling."""
     import json
     cmd = ["yt-dlp", "--dump-json", "--no-playlist", url]
     try:
         process = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
         stdout, stderr = await process.communicate()
-        if process.returncode != 0: raise Exception(stderr.decode())
+        
+        if process.returncode != 0:
+            err_text = stderr.decode().lower()
+            if "available in your country" in err_text:
+                return {"error": "GEO_BLOCKED", "message": "Video is geo-restricted in the bot's region."}
+            if "private video" in err_text:
+                return {"error": "PRIVATE", "message": "Video is private."}
+            if "not a valid url" in err_text:
+                return {"error": "INVALID_URL", "message": "Invalid YouTube URL."}
+            raise Exception(err_text)
+            
         meta = json.loads(stdout.decode())
         return {
             "title": meta.get("title", "Unknown Video"),
@@ -236,7 +246,7 @@ async def fetch_video_metadata(url: str) -> dict:
         }
     except Exception as e:
         log("ERROR", f"Failed to fetch metadata: {e}")
-        return {}
+        return {"error": "UNKNOWN", "message": str(e)}
 
 async def download_video_optimal(url: str, output_folder: str) -> str:
     """Downloads video in optimal MKV 1080p format."""
