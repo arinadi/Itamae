@@ -42,7 +42,7 @@ In your **Google Colab**, click the **Secrets** tab (key icon 🔑) and add thes
     from google.colab import userdata
 
     # 1. Load Ingredients into Kitchen Environment
-    for key in ['ITAMAE_TELEGRAM_TOKEN', 'ITAMAE_ADMIN_CHAT_ID', 'ITAMAE_GEMINI_KEY', 'ITAMAE_GITHUB_TOKEN', 'ITAMAE_CONFIG_URL']:
+    for key in ['ITAMAE_TELEGRAM_TOKEN', 'ITAMAE_ADMIN_CHAT_ID', 'ITAMAE_GEMINI_KEY', 'ITAMAE_GITHUB_TOKEN', 'ITAMAE_CONFIG_REPO']:
         try:
             val = userdata.get(key)
             if val: os.environ[key] = str(val)
@@ -58,8 +58,8 @@ In your **Google Colab**, click the **Secrets** tab (key icon 🔑) and add thes
 Tired of re-entering secrets for every new Colab? You can store them in a **Private GitHub Repository** (e.g., in a file named `.env.itamae`) and fetch them securely.
 
 1. Add `ITAMAE_GITHUB_TOKEN` (your PAT) to Colab Secrets.
-2. Add `ITAMAE_CONFIG_URL` (the Raw URL of your private `.env` file) to Colab Secrets.
-3. The bot will automatically pull all other keys from your cloud repository upon startup!
+2. Add `ITAMAE_CONFIG_REPO` (the standard HTTPS URL of your private config repository) to Colab Secrets.
+3. The bot will automatically clone the repo and pull all other keys from its `.env.itamae` file!
 </details>
 
 ---

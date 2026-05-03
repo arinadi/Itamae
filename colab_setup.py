@@ -18,8 +18,8 @@ def load_secrets():
     Assumes other core secrets are already set in the environment by the Colab cell.
     """
     # 1. Primary: Private Repository File (Option B)
-    token = os.environ.get('ITAMAE_GITHUB_TOKEN') or os.environ.get('GITHUB_TOKEN')
-    config_repo = os.environ.get('ITAMAE_CONFIG_REPO') or os.environ.get('ITAMAE_CONFIG_URL')
+    token = os.environ.get('ITAMAE_GITHUB_TOKEN')
+    config_repo = os.environ.get('ITAMAE_CONFIG_REPO')
     
     if token and config_repo:
         print(f"🔐 Option B: Cloning private config repository...")
