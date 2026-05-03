@@ -311,29 +311,67 @@ async def get_video_highlights_csv(transcript: str, gemini_client) -> list[dict]
         "Analyze the transcript and identify 3-5 high-impact highlights. "
         "For each, you can provide ONE or MORE segments to be stitched (Jump Cut). "
         "Return ONLY a CSV with headers: title,start,end,reason. "
-        "In 'reason', write a very short label for the vibe: 'Funny', 'Profound', 'Action', 'Wise', 'Angry', or 'Reactive'. "
-        "Duration per title: 10-30s."
+        "In 'reason', write a very short label: 'Funny', 'Profound', 'Action', 'Wise', 'Angry', or 'Reactive'. "
+        "STRICT: No preamble, no markdown, no other text. Only the CSV."
     )
     try:
-        log("GEMINI", "Analyzing highlights...")
-        response = await asyncio.to_thread(gemini_client.models.generate_content, model="gemini-2.5-flash", contents=[system_prompt, transcript])
-        csv_text = response.text.strip()
+        log("GEMINI", "Analyzing highlights with gemini-1.5-flash...")
+        response = await asyncio.to_thread(
+            gemini_client.models.generate_content, 
+            model="gemini-1.5-flash", 
+            contents=[system_prompt, transcript]
+        )
+        
+        raw_text = response.text.strip()
+        log("GEMINI", f"Raw Response length: {len(raw_text)} chars")
+        
+        # Robust CSV filtering: find the first occurrence of 'title,start,end,reason'
         import csv
         from io import StringIO
-        if csv_text.startswith("```"): csv_text = "\n".join(csv_text.split("\n")[1:-1])
-        reader = csv.DictReader(StringIO(csv_text))
+        
+        # Remove markdown blocks if Gemini insisted on them
+        clean_csv = raw_text
+        if "```" in clean_csv:
+            # Try to find code block content
+            import re
+            match = re.search(r"```(?:csv|text)?\s*(.*?)\s*```", clean_csv, re.DOTALL)
+            if match:
+                clean_csv = match.group(1).strip()
+
+        # If it still has multiple lines and the first line isn't the header, try to skip until header
+        lines = clean_csv.splitlines()
+        valid_lines = []
+        header_found = False
+        for line in lines:
+            if "title,start,end,reason" in line.lower():
+                header_found = True
+                valid_lines.append("title,start,end,reason")
+                continue
+            if header_found and "," in line:
+                valid_lines.append(line)
+        
+        if not valid_lines:
+            # Fallback: maybe no header? try reading all lines with commas
+            valid_lines = [l for l in lines if "," in l and any(c.isdigit() for l in lines for c in l)]
+
+        reader = csv.DictReader(StringIO("\n".join(valid_lines)))
         highlights = []
         for row in reader:
-            try: highlights.append({
-                "title": row["title"].strip(), 
-                "start": float(row["start"]), 
-                "end": float(row["end"]),
-                "reason": row.get("reason", "Interesting").strip()
-            })
+            try:
+                h = {
+                    "title": row.get("title", f"Highlight_{len(highlights)}").strip(),
+                    "start": float(row.get("start", 0)),
+                    "end": float(row.get("end", 0)),
+                    "reason": row.get("reason", "Interesting").strip()
+                }
+                if h["end"] > h["start"]:
+                    highlights.append(h)
             except: continue
+            
+        log("GEMINI", f"Chef found {len(highlights)} prime segments.")
         return highlights
     except Exception as e:
-        log("ERROR", f"Highlight failed: {e}"); return []
+        log("ERROR", f"Highlight analysis failed: {e}"); return []
 
 async def slice_video_clip(input_path: str, start: float, end: float, output_path: str, target_size_mb: float = None):
     """Slices a video clip using FFmpeg with 1.25x speedup and silence removal."""
