@@ -138,7 +138,7 @@ async def download_video_optimal(url: str, folder: str, job_id: str) -> str:
     from config import Config
     cmd = ["yt-dlp", "-f", "bestvideo[height<=1080][ext=mkv]+bestaudio[ext=m4a]/best[height<=1080]", 
            "--merge-output-format", "mkv", "-o", tmpl, "--print", "after_move:filepath", "--geo-bypass",
-           "--write-subs", "--write-auto-subs", "--sub-langs", Config.SUBTITLE_LANGS, "--convert-subs", "srt", url]
+           "--write-subs", "--write-auto-subs", "--sub-langs", Config.SUBTITLE_LANGS, "--max-subs", "1", "--convert-subs", "srt", url]
     try:
         log("FILE", f"Downloading: {url}")
         proc = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
