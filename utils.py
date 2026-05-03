@@ -34,8 +34,26 @@ def format_timestamp(seconds: float, srt: bool = False) -> str:
 PRIMARY_MODEL = "gemini-3-flash-preview"
 FALLBACK_MODEL = "gemini-2.5-flash"
 
+def parse_ts(ts) -> float:
+    """Parses seconds, MM:SS, or HH:MM:SS to float seconds."""
+    s = str(ts).strip()
+    if not s: return 0.0
+    try: return float(s)
+    except:
+        p = s.split(':')
+        try:
+            if len(p) == 2: return int(p[0]) * 60 + float(p[1])
+            if len(p) == 3: return int(p[0]) * 3600 + int(p[1]) * 60 + float(p[2])
+        except: pass
+    return 0.0
+
 def format_transcription_native(segments: list) -> str:
-    return "\n\n".join([s.text.strip() for s in segments if hasattr(s, 'text') and s.text.strip()])
+    """Formats segments with timestamps for AI analysis: [start] text"""
+    lines = []
+    for s in segments:
+        if hasattr(s, 'text') and s.text.strip():
+            lines.append(f"[{s.start:.1f}] {s.text.strip()}")
+    return "\n".join(lines)
 
 def format_transcription_srt(segments: list) -> str:
     lines = []
@@ -59,9 +77,12 @@ async def summarize_text(transcript: str, gemini_client, mode: str = 'WHISPER') 
 
 async def get_video_highlights_csv(transcript: str, gemini_client) -> list[dict]:
     if not gemini_client: return []
-    sys_prompt = ("You are a Social Media Viral Editor. Analyze transcript and find 3-5 high-impact highlights.\n"
-                  "Output ONLY CSV with headers: title,start,end,reason. Reason: Funny, Wise, Action, Reactive.\n"
-                  "STRICT: No preamble, no markdown. 10-30s clips.")
+    sys_prompt = ("You are a professional Social Media Viral Video Editor. Analyze the transcript and identify 3-5 high-impact highlights.\n"
+                  "Output ONLY CSV with headers: title,start,end,reason.\n"
+                  "STRICT RULES:\n"
+                  "- 'start' and 'end' MUST be TOTAL SECONDS (e.g. 150.5). Avoid MM:SS format.\n"
+                  "- 'reason': Funny, Wise, Action, or Reactive.\n"
+                  "- Target 10-30s per title. No preamble, no markdown.")
     
     async def _req(model):
         log("GEMINI", f"Highlighting with {model}...")
@@ -72,11 +93,22 @@ async def get_video_highlights_csv(transcript: str, gemini_client) -> list[dict]
             if m: text = m.group(1).strip()
         import csv; from io import StringIO
         lines = [l for l in text.splitlines() if "," in l]
-        # Ensure header
         if lines and "title" not in lines[0].lower(): lines.insert(0, "title,start,end,reason")
         reader = csv.DictReader(StringIO("\n".join(lines)))
-        return [{"title": r["title"].strip(), "start": float(r["start"]), "end": float(r["end"]), "reason": r.get("reason", "Interesting").strip()} 
-                for r in reader if r.get("start")]
+        results = []
+        for r in reader:
+            try:
+                start = parse_ts(r.get("start", "0"))
+                end = parse_ts(r.get("end", "0"))
+                if end > start:
+                    results.append({
+                        "title": r["title"].strip(),
+                        "start": start,
+                        "end": end,
+                        "reason": r.get("reason", "Interesting").strip()
+                    })
+            except: continue
+        return results
 
     try: return await _req(PRIMARY_MODEL)
     except Exception as e:
