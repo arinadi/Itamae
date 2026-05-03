@@ -24,18 +24,27 @@ def load_secrets():
     if token and config_url:
         print(f"🔐 Option B: Fetching private config from cloud...")
         try:
-            url = config_url
+            url = config_url.split("?")[0] # Strip temporary tokens
             headers = {"Authorization": f"token {token}"}
             
             # Convert Raw URLs to API URLs for reliable PAT authentication
             if "raw.githubusercontent.com" in url:
-                # Format: https://raw.githubusercontent.com/user/repo/branch/path
-                p = url.replace("https://raw.githubusercontent.com/", "").split("/", 3)
-                if len(p) >= 4: url = f"https://api.github.com/repos/{p[0]}/{p[1]}/contents/{p[3]}?ref={p[2]}"
+                # Format 1: raw.githubusercontent.com/user/repo/refs/heads/branch/path
+                # Format 2: raw.githubusercontent.com/user/repo/branch/path
+                p = url.replace("https://raw.githubusercontent.com/", "").split("/")
+                if len(p) >= 3:
+                    user, repo = p[0], p[1]
+                    if p[2] == "refs" and p[3] == "heads":
+                        branch, path = p[4], "/".join(p[5:])
+                    else:
+                        branch, path = p[2], "/".join(p[3:])
+                    url = f"https://api.github.com/repos/{user}/{repo}/contents/{path}?ref={branch}"
             elif "github.com" in url and "/raw/" in url:
-                # Format: https://github.com/user/repo/raw/branch/path
-                p = url.replace("https://github.com/", "").replace("/raw/", "/").split("/", 3)
-                if len(p) >= 4: url = f"https://api.github.com/repos/{p[0]}/{p[1]}/contents/{p[3]}?ref={p[2]}"
+                p = url.replace("https://github.com/", "").split("/")
+                # user/repo/raw/branch/path
+                if len(p) >= 4:
+                    user, repo, branch, path = p[0], p[1], p[3], "/".join(p[4:])
+                    url = f"https://api.github.com/repos/{user}/{repo}/contents/{path}?ref={branch}"
             
             if "api.github.com" in url:
                 headers["Accept"] = "application/vnd.github.v3.raw"
