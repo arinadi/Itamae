@@ -3,6 +3,7 @@ import time
 import sys
 import requests
 import json
+import shutil
 
 # --- CONFIGURATION ---
 REPO_URL = "https://github.com/arinadi/Itamae.git" 
