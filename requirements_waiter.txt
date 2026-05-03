@@ -7,3 +7,9 @@ requests
 tqdm
 more-itertools
 yt-dlp
+
+# --- Colab Environment Sanitization (Critical Fixes) ---
+numpy<2.0.0
+cryptography>=42.0.0
+pyOpenSSL>=24.0.0
+Pillow>=11.0.0

@@ -174,10 +174,9 @@ async def initialize_models_background():
 
         # 4. Initialize Gemini
         if GEMINI_API_KEY:
-            import google.generativeai as genai
-            genai.configure(api_key=GEMINI_API_KEY)
-            gemini_client = True # Just a flag to indicate it's configured
-            log("INIT", "Gemini (Stable SDK) ready.")
+            from google import genai
+            gemini_client = genai.Client(api_key=GEMINI_API_KEY)
+            log("INIT", "Gemini ready.")
 
         # 5. Gradio
         try:
