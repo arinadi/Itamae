@@ -134,7 +134,11 @@ async def fetch_video_metadata(url: str) -> dict:
 
 async def download_video_optimal(url: str, folder: str, job_id: str) -> str:
     tmpl = os.path.join(folder, f"{job_id}.%(ext)s")
-    cmd = ["yt-dlp", "-f", "bestvideo[height<=1080][ext=mkv]+bestaudio[ext=m4a]/best[height<=1080]", "--merge-output-format", "mkv", "-o", tmpl, "--print", "after_move:filepath", "--geo-bypass", url]
+    # Add flags for subtitles: manual and auto-generated, converted to SRT
+    from config import Config
+    cmd = ["yt-dlp", "-f", "bestvideo[height<=1080][ext=mkv]+bestaudio[ext=m4a]/best[height<=1080]", 
+           "--merge-output-format", "mkv", "-o", tmpl, "--print", "after_move:filepath", "--geo-bypass",
+           "--write-subs", "--write-auto-subs", "--sub-langs", Config.SUBTITLE_LANGS, "--convert-subs", "srt", url]
     try:
         log("FILE", f"Downloading: {url}")
         proc = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
@@ -163,6 +167,33 @@ async def concatenate_video_segments(paths: list[str], out_path: str) -> bool:
     cmd = ["ffmpeg", "-y"] + [a for p in paths for a in ("-i", p)] + ["-filter_complex", f"{v_a}concat=n={len(paths)}:v=1:a=1[v][a]", "-map", "[v]", "-map", "[a]", "-c:v", "libx264", "-preset", "veryfast", "-crf", "23", "-c:a", "aac", out_path]
     proc = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
     await proc.communicate(); return proc.returncode == 0
+
+def parse_srt_to_segments(srt_path: str) -> list:
+    """Parses an SRT file into a list of Whisper-compatible segment objects/dicts."""
+    import re
+    if not srt_path or not os.path.exists(srt_path): return []
+    try:
+        with open(srt_path, 'r', encoding='utf-8') as f: content = f.read()
+        # Simple SRT regex: index, timestamp, text
+        pattern = re.compile(r'(\d+)\s*\n(\d{2}:\d{2}:\d{2},\d{3}) --> (\d{2}:\d{2}:\d{2},\d{3})\s*\n(.*?)(?=\n\d+\s*\n|\Z)', re.DOTALL)
+        matches = pattern.findall(content)
+        
+        def ts_to_sec(ts):
+            h, m, s = ts.replace(',', '.').split(':')
+            return int(h)*3600 + int(m)*60 + float(s)
+
+        segments = []
+        for m in matches:
+            segments.append(type('Segment', (), {
+                'start': ts_to_sec(m[1]),
+                'end': ts_to_sec(m[2]),
+                'text': m[3].replace('\n', ' ').strip()
+            }))
+        return segments
+    except Exception as e:
+        from bot_classes import log
+        log("ERROR", f"SRT Parse fail: {e}")
+        return []
 
 async def send_video_adaptive(bot, chat_id: int, path: str, caption: str, reply_id: int = None):
     try:

@@ -349,7 +349,30 @@ async def queue_processor():
             await application.bot.send_message(job.chat_id, f"▶️ *Processing:* `{job.video_title or job.original_filename}` ({duration_str})...", parse_mode=ParseMode.MARKDOWN)
 
             # --- Phase B: AI Analysis ---
-            transcript_text, detected_language, segments = await asyncio.to_thread(run_transcription_process, job)
+            segments = []
+            transcript_text = ""
+            detected_language = "unknown"
+
+            if job.is_url_job and job.local_filepath:
+                # Check for YouTube-downloaded SRTs (yt-dlp converts to .srt)
+                base_path = os.path.splitext(job.local_filepath)[0]
+                possible_srt = None
+                # yt-dlp might name it [job_id].[lang].srt
+                for f in os.listdir(UPLOAD_FOLDER):
+                    if f.startswith(job.job_id) and f.endswith(".srt"):
+                        possible_srt = os.path.join(UPLOAD_FOLDER, f)
+                        break
+                
+                if possible_srt:
+                    log("JOB", f"[{job.job_id}] Found YouTube subtitles: {os.path.basename(possible_srt)}")
+                    from utils import parse_srt_to_segments, format_transcription_native
+                    segments = parse_srt_to_segments(possible_srt)
+                    if segments:
+                        log("JOB", f"[{job.job_id}] Using YouTube subtitles, skipping Whisper.")
+                        transcript_text = format_transcription_native(segments)
+
+            if not segments:
+                transcript_text, detected_language, segments = await asyncio.to_thread(run_transcription_process, job)
             if job.status == 'cancelled': raise asyncio.CancelledError("Cancelled")
 
             # Save/Send Subtitles (SRT)
@@ -432,9 +455,11 @@ async def queue_processor():
             job.status = "failed"; log("ERROR", f"[{job.job_id}] {e}")
             await application.bot.send_message(job.chat_id, f"❌ *Kitchen Accident:* `{e}`", parse_mode=ParseMode.MARKDOWN, reply_to_message_id=job.message_id)
         finally:
-            if job.local_filepath and os.path.exists(job.local_filepath):
-                try: os.remove(job.local_filepath)
-                except Exception: pass
+            # Cleanup all job-related files in upload folder (video, subs, etc.)
+            for f in os.listdir(UPLOAD_FOLDER):
+                if f.startswith(job.job_id):
+                    try: os.remove(os.path.join(UPLOAD_FOLDER, f))
+                    except: pass
             job_manager.job_queue.task_done()
             job_manager.complete_job(job.job_id)
 

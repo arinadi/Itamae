@@ -57,7 +57,10 @@ class Config:
     # Speech Pad: Padding added to speech segments (ms) to prevent cutting words.
     VAD_SPEECH_PAD_MS = int(os.getenv('VAD_SPEECH_PAD_MS', 400))
 
-    # --- System Limits ---
+    # --- Sourcing & Subtitles ---
+    # Languages to try for YouTube subtitles (comma-separated, e.g., 'id,en.*')
+    SUBTITLE_LANGS = os.getenv('SUBTITLE_LANGS', 'id,en.*')
+
     # File Size Limit: Max file size for processing (MB).
     BOT_FILESIZE_LIMIT = int(os.getenv('BOT_FILESIZE_LIMIT', 20)) 
 
