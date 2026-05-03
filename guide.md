@@ -95,38 +95,30 @@ This is where the actual cooking (video processing) happens.
 
 ## 🌍 Advanced: One-Key Kitchen (Portable Setup)
 
-Tired of entering secrets every time you switch Colab accounts? Use the **One-Key Kitchen** method to load all secrets automatically from a private GitHub Gist using format **`.env.itamae`**.
+Tired of entering secrets every time you switch Colab accounts? Use the **One-Key Kitchen** method to load all secrets automatically from a private GitHub file.
 
-### 1. Create a Secret Gist (via CLI)
-If you have **GitHub CLI (`gh`)** installed, you can do this in seconds:
-
-1.  Create your local secret file:
-    ```bash
-    cat <<EOF > .env.itamae
+### 1. Create a Private Repository
+1.  Create a **New Repository** on GitHub (e.g., `itamae-config`).
+2.  Set it to **Private**.
+3.  Create a file named `.env.itamae` inside this repo with your secrets:
+    ```env
     ITAMAE_TELEGRAM_TOKEN=your_bot_token
     ITAMAE_ADMIN_CHAT_ID=your_chat_id
     ITAMAE_GEMINI_KEY=your_gemini_key
-    EOF
     ```
-2.  Create the Secret Gist:
-    ```bash
-    gh gist create .env.itamae --desc "Itamae Clipper Secrets" --public=false
-    ```
-3.  **Copy the Gist ID** from the output URL: `https://gist.github.com/username/<GIST_ID_HERE>`.
-4.  Safe cleanup: `rm .env.itamae`
 
-### 2. Generate GitHub Token
-1.  Go to [GitHub Settings > Tokens (classic)](https://github.com/settings/tokens).
-2.  Generate a **New Token**.
-3.  Select the **`gist`** scope.
-4.  Copy the token.
+### 2. Get the Raw API URL
+1.  Open your `.env.itamae` file in the GitHub web interface.
+2.  Click the **Raw** button.
+3.  Copy the URL. It should look like: `https://raw.githubusercontent.com/user/repo/main/.env.itamae`
+    *Note: The bot uses the GitHub API, but providing the Raw URL helps it identify the file path.*
 
 ### 3. One-Time Colab Setup
-Now, in any Colab account, you only need to add **TWO** secrets:
--   `ITAMAE_GITHUB_TOKEN`: (Your GitHub Token)
--   `ITAMAE_GIST_ID`: (Your Gist ID)
+Now, in any Colab account, you only need to add **TWO** secrets to the key icon tab:
+-   `ITAMAE_GITHUB_TOKEN`: (A GitHub Personal Access Token with `repo` scope)
+-   `ITAMAE_CONFIG_URL`: (The URL from Step 2)
 
-Itamae will automatically fetch the rest of the ingredients from your GitHub Gist upon startup!
+Itamae will automatically fetch all your ingredients from your private cloud storage upon startup!
 
 ---
 *“A master chef serves only perfection. Happy slicing!”* 🔪🍣✨

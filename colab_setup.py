@@ -13,84 +13,59 @@ def run_command(cmd):
     print(f"Executing: {cmd}")
     return os.system(cmd)
 
-def load_secrets_from_gist():
-    """Loads project secrets from a private GitHub Gist with smart validation."""
-    token = os.environ.get('ITAMAE_GITHUB_TOKEN') or os.environ.get('GITHUB_TOKEN', '')
-    gist_id = os.environ.get('ITAMAE_GIST_ID', '')
-    
-    # --- Smart Swap Detection ---
-    # GitHub Tokens usually start with ghp_ or github_pat_
-    # Gist IDs are hexadecimal strings
-    if gist_id.startswith(('ghp_', 'github_pat_')) and not token.startswith(('ghp_', 'github_pat_')):
-        print("⚠️  DETECTED: Secrets might be swapped! Attempting to fix internally...")
-        token, gist_id = gist_id, token
-    
-    if not token or not gist_id:
-        print("ℹ️ Gist Loader: Missing token or Gist ID. Skipping cloud secrets.")
-        return
-
-    if not token.startswith(('ghp_', 'github_pat_')):
-        print("❌ Gist Loader: ITAMAE_GITHUB_TOKEN invalid format. Should start with 'ghp_'.")
-        return
-
-    print(f"⏳ Gist Loader: Fetching secrets from Gist {gist_id[:6]}...")
+def load_secrets():
+    """Loads secrets using Hierarchy: Colab UserData -> Private Repo File -> Env Vars."""
+    # 1. Primary: Google Colab Secrets (userdata)
     try:
-        headers = {"Authorization": f"Bearer {token}", "Accept": "application/vnd.github+json"}
-        response = requests.get(f"https://api.github.com/gists/{gist_id}", headers=headers, timeout=10)
-        
-        if response.status_code == 401:
-            print("❌ Gist Loader Error: 401 Unauthorized. Check if your GITHUB_TOKEN is correct and has 'gist' scope.")
-            return
-        elif response.status_code == 404:
-            print(f"❌ Gist Loader Error: 404 Not Found. Gist ID '{gist_id}' is incorrect or private gist inaccessible.")
-            return
+        from google.colab import userdata
+        log_colab = False
+        for key in ['ITAMAE_TELEGRAM_TOKEN', 'ITAMAE_ADMIN_CHAT_ID', 'ITAMAE_GEMINI_KEY', 'ITAMAE_GITHUB_TOKEN', 'ITAMAE_CONFIG_URL', 'ITAMAE_GIST_ID']:
+            try:
+                val = userdata.get(key)
+                if val: 
+                    os.environ[key] = str(val)
+                    log_colab = True
+            except: pass
+        if log_colab: print("✅ Secrets: Loaded from Google Colab UserData.")
+    except (ImportError, ModuleNotFoundError):
+        pass
+
+    # 2. Advanced Fallback: Private Repository File (Option B)
+    token = os.environ.get('ITAMAE_GITHUB_TOKEN') or os.environ.get('GITHUB_TOKEN')
+    config_url = os.environ.get('ITAMAE_CONFIG_URL')
+    
+    if token and config_url:
+        print(f"🔐 Option B: Fetching private config from cloud...")
+        try:
+            # Handle both direct raw URLs and API URLs
+            headers = {"Authorization": f"token {token}"}
+            if "api.github.com" in config_url:
+                headers["Accept"] = "application/vnd.github.v3.raw"
             
-        response.raise_for_status()
-        gist_data = response.json()
-        secrets_loaded = 0
-        
-        for filename, file_info in gist_data.get('files', {}).items():
-            content = file_info['content']
+            response = requests.get(config_url, headers=headers, timeout=10)
+            response.raise_for_status()
+            content = response.text
             
-            # Case 1: .env format (Key=Value) - Recommended
-            if ".env" in filename or filename == ".env.itamae":
-                for line in content.splitlines():
-                    line = line.strip()
-                    if not line or line.startswith("#") or "=" not in line: continue
-                    k, v = line.split("=", 1)
-                    k = k.strip()
-                    v = v.strip().strip('"').strip("'")
-                    if k.startswith("ITAMAE_"):
-                        os.environ[k] = v
-                        secrets_loaded += 1
-            
-            # Case 2: JSON format
-            elif filename.endswith('.json'):
-                try:
-                    data = json.loads(content)
-                    for k, v in data.items():
-                        if k.startswith("ITAMAE_"):
-                            os.environ[k] = str(v)
-                            secrets_loaded += 1
-                except: pass
-        
-        if secrets_loaded > 0:
-            print(f"✅ Gist Loader: Successfully loaded {secrets_loaded} secrets.")
-            # Also set the correctly identified token for git operations later
-            os.environ['ITAMAE_GITHUB_TOKEN'] = token
-        else:
-            print("⚠️ Gist Loader: No ITAMAE_ secrets found in Gist files.")
-            
-    except Exception as e:
-        print(f"❌ Gist Loader Error: {e}")
+            loaded = 0
+            for line in content.splitlines():
+                line = line.strip()
+                if not line or line.startswith("#") or "=" not in line: continue
+                k, v = line.split("=", 1)
+                k, v = k.strip(), v.strip().strip('"').strip("'")
+                if k.startswith("ITAMAE_"):
+                    os.environ[k] = v
+                    loaded += 1
+            if loaded > 0: print(f"✅ Option B: Loaded {loaded} secrets from private repo.")
+        except Exception as e:
+            print(f"⚠️ Option B failed: {e}")
 
 def main():
     start_time = time.time()
     if 'INIT_START' not in os.environ:
         os.environ['INIT_START'] = str(int(start_time))
 
-    # 0. Load Cloud Secrets
-    load_secrets_from_gist()
+    # 0. Load Cloud Secrets (Colab -> Private Repo -> Env)
+    load_secrets()
 
     print("🔄 Checking environment...")
 
@@ -106,7 +81,7 @@ def main():
         run_command("git reset --hard origin/main")
     else:
         print(f"⏳ Cloning {REPO_NAME}...")
-        # Use the validated token from Gist Loader if available
+        # Use the validated token from setup if available
         token = os.environ.get('ITAMAE_GITHUB_TOKEN') or os.environ.get('GITHUB_TOKEN')
         clone_url = REPO_URL
         if token and "github.com" in clone_url:
