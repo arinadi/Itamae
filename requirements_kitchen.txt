@@ -4,3 +4,6 @@ google-genai
 gradio>=4.0.0
 yt-dlp
 torch
+cryptography>=42.0.0
+pyOpenSSL>=24.0.0
+Pillow>=10.0.0
