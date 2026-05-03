@@ -24,12 +24,23 @@ def load_secrets():
     if token and config_url:
         print(f"🔐 Option B: Fetching private config from cloud...")
         try:
-            # Handle both direct raw URLs and API URLs
+            url = config_url
             headers = {"Authorization": f"token {token}"}
-            if "api.github.com" in config_url:
+            
+            # Convert Raw URLs to API URLs for reliable PAT authentication
+            if "raw.githubusercontent.com" in url:
+                # Format: https://raw.githubusercontent.com/user/repo/branch/path
+                p = url.replace("https://raw.githubusercontent.com/", "").split("/", 3)
+                if len(p) >= 4: url = f"https://api.github.com/repos/{p[0]}/{p[1]}/contents/{p[3]}?ref={p[2]}"
+            elif "github.com" in url and "/raw/" in url:
+                # Format: https://github.com/user/repo/raw/branch/path
+                p = url.replace("https://github.com/", "").replace("/raw/", "/").split("/", 3)
+                if len(p) >= 4: url = f"https://api.github.com/repos/{p[0]}/{p[1]}/contents/{p[3]}?ref={p[2]}"
+            
+            if "api.github.com" in url:
                 headers["Accept"] = "application/vnd.github.v3.raw"
             
-            response = requests.get(config_url, headers=headers, timeout=10)
+            response = requests.get(url, headers=headers, timeout=10)
             response.raise_for_status()
             content = response.text
             
