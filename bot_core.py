@@ -316,7 +316,13 @@ def run_transcription_process(job: TranscriptionJob) -> tuple[str, str, list]:
         speech_pad_ms=VAD_SPEECH_PAD_MS
     )
     
-    segments_generator, info = model.transcribe(job.local_filepath, vad_filter=VAD_FILTER, vad_parameters=vad_parameters, **transcribe_options)
+    # NOTE: BatchedInferencePipeline REQUIRES vad_filter=True or clip_timestamps
+    segments_generator, info = model.transcribe(
+        job.local_filepath, 
+        vad_filter=True, 
+        vad_parameters=vad_parameters, 
+        **transcribe_options
+    )
     segments = list(segments_generator)
     from utils import format_transcription_native
     formatted_text = format_transcription_native(segments)
