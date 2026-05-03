@@ -48,11 +48,11 @@ def parse_ts(ts) -> float:
     return 0.0
 
 def format_transcription_native(segments: list) -> str:
-    """Formats segments with timestamps for AI analysis: [start] text"""
+    """Formats segments with timestamps for AI analysis: [start -> end] text"""
     lines = []
     for s in segments:
         if hasattr(s, 'text') and s.text.strip():
-            lines.append(f"[{s.start:.1f}] {s.text.strip()}")
+            lines.append(f"[{s.start:.1f} -> {s.end:.1f}] {s.text.strip()}")
     return "\n".join(lines)
 
 def format_transcription_srt(segments: list) -> str:
@@ -77,12 +77,15 @@ async def summarize_text(transcript: str, gemini_client, mode: str = 'WHISPER') 
 
 async def get_video_highlights_csv(transcript: str, gemini_client) -> list[dict]:
     if not gemini_client: return []
-    sys_prompt = ("You are a professional Social Media Viral Video Editor. Analyze the transcript and identify 3-5 high-impact highlights.\n"
-                  "Output ONLY CSV with headers: title,start,end,reason.\n"
-                  "STRICT RULES:\n"
-                  "- 'start' and 'end' MUST be TOTAL SECONDS (e.g. 150.5). Avoid MM:SS format.\n"
-                  "- 'reason': Funny, Wise, Action, or Reactive.\n"
-                  "- Target 10-30s per title. No preamble, no markdown.")
+    sys_prompt = ("You are an expert Viral Video Editor for TikTok and Reels. Analyze the transcript and identify 3-5 high-impact highlights.\n"
+                  "STRICT RULES FOR HIGHLIGHTS:\n"
+                  "- Look for strong HOOKS (attention-grabbing starts), emotional peaks, or controversial takes.\n"
+                  "- Each clip MUST be a self-contained point or story.\n"
+                  "- Output ONLY CSV with headers: title,start,end,reason.\n"
+                  "- 'start' and 'end' MUST be TOTAL SECONDS (e.g. 150.5). Be extremely precise based on the [start -> end] timestamps provided.\n"
+                  "- 'reason': Hook, Wise, Insightful, Controversial, or Reactive.\n"
+                  "- 'title': Short clickbait title (max 5 words).\n"
+                  "- Target 15-45s per title. No preamble, no markdown.")
     
     async def _req(model):
         log("GEMINI", f"Highlighting with {model}...")

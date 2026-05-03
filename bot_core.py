@@ -8,6 +8,7 @@ import os
 import asyncio
 import gc
 import time
+import uuid
 from typing import Optional
 
 # --- Local Imports ---
@@ -125,7 +126,7 @@ models_ready_event = asyncio.Event()
 
 async def initialize_models_background():
     """Loads heavy ML dependencies and AI models in the background."""
-    global model, gemini_client, GRADIO_AVAILABLE, MODE, device, gradio_handler
+    global model, gemini_client, GRADIO_AVAILABLE, gradio_handler
     try:
         if SHUTDOWN_IN_PROGRESS: return
 
@@ -237,7 +238,6 @@ async def perform_shutdown(reason: str):
 
 async def initialize_gradio_background():
     """Launches Gradio web server in background and notifies Telegram with pinned URL."""
-    global gradio_handler
     if not GRADIO_AVAILABLE or not gradio_handler:
         log("GRADIO", "Not available, skipping")
         return
@@ -378,7 +378,7 @@ async def queue_processor():
 
                 from more_itertools import groupby_transform
                 grouped = []
-                for k, g in groupby_transform(highlights, key=lambda h: h["title"]): grouped.append((k, list(g)))
+                for k, g in groupby_transform(highlights, lambda h: h["title"]): grouped.append((k, list(g)))
                 
                 await application.bot.send_message(job.chat_id, f"🔪 *Chef is slicing:* Identified `{len(grouped)}` highlights. Slicing now...", parse_mode=ParseMode.MARKDOWN)
                 
