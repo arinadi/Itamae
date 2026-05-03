@@ -524,7 +524,13 @@ async def main():
         for url in urls:
             if "youtube.com" in url or "youtu.be" in url:
                 status_msg = await update.effective_message.reply_text(f"🔍 *Sourcing Ingredients:* `{url}`", parse_mode=ParseMode.MARKDOWN)
-                metadata = await fetch_video_metadata(url)
+                
+                job_manager.start_sourcing()
+                try:
+                    metadata = await fetch_video_metadata(url)
+                finally:
+                    job_manager.stop_sourcing()
+
                 if "error" in metadata:
                     error_type = metadata.get("error")
                     if error_type == "GEO_BLOCKED":
