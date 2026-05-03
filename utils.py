@@ -121,7 +121,7 @@ async def get_video_highlights_csv(transcript: str, gemini_client) -> list[dict]
 # --- Video & Sourcing ---
 
 async def fetch_video_metadata(url: str) -> dict:
-    cmd = ["yt-dlp", "--no-playlist", "--geo-bypass", "--no-check-certificates", "--quiet", 
+    cmd = ["yt-dlp", "--no-playlist", "--xff", "default", "--no-check-certificates", "--quiet", 
            "--extractor-args", "youtube:player_client=android,web",
            "--print", "%(title)s|||%(duration)s|||%(thumbnail)s", url]
     try:
@@ -140,12 +140,12 @@ async def download_video_optimal(url: str, folder: str, job_id: str) -> str:
     cmd = [
         "yt-dlp", "-f", "bestvideo[height<=1080]+bestaudio/best[height<=1080]", 
         "--merge-output-format", "mkv", "-o", tmpl, 
-        "--print", "after_move:filepath", "--geo-bypass", "--no-check-certificates", "--no-playlist",
+        "--print", "after_move:filepath", "--xff", "default", "--no-check-certificates", "--no-playlist",
         "-N", "5", "--sponsorblock-remove", "all",
         "--embed-metadata", "--embed-chapters",
         "--extractor-args", "youtube:player_client=android,web",
         "--write-subs", "--write-auto-subs", "--sub-langs", Config.SUBTITLE_LANGS, 
-        "--max-subs", "1", "--convert-subs", "srt", url
+        "--convert-subs", "srt", url
     ]
     try:
         log("FILE", f"Downloading: {url}")
