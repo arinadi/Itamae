@@ -9,5 +9,4 @@ Pillow>=11.0.0
 faster-whisper
 google-genai
 gradio>=4.0.0
-yt-dlp
 torch
