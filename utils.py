@@ -261,28 +261,44 @@ async def fetch_video_metadata(url: str) -> dict:
         log("ERROR", f"Lean fetch failed: {e}")
         return {"error": "UNKNOWN", "message": str(e)}
 
-async def download_video_optimal(url: str, output_folder: str, use_bypass: bool = False) -> str:
-    """Downloads video in optimal MKV 1080p format with geo-bypass fallback."""
-    output_template = os.path.join(output_folder, "%(id)s.%(ext)s")
-    cmd = ["yt-dlp", "-f", "bestvideo[height<=1080][ext=mkv]+bestaudio[ext=m4a]/best[height<=1080]", "--merge-output-format", "mkv", "-o", output_template]
-    if use_bypass:
-        cmd.append("--geo-bypass")
+async def download_video_optimal(url: str, output_folder: str, job_id: str, use_bypass: bool = False) -> str:
+    """Downloads video with job_id as filename and returns exact path."""
+    output_template = os.path.join(output_folder, f"{job_id}.%(ext)s")
+    # Always include --print to get the final filename reliably
+    cmd = [
+        "yt-dlp", 
+        "-f", "bestvideo[height<=1080][ext=mkv]+bestaudio[ext=m4a]/best[height<=1080]", 
+        "--merge-output-format", "mkv", 
+        "-o", output_template,
+        "--print", "after_move:filepath" # This prints the final merged filepath
+    ]
+    if use_bypass: cmd.append("--geo-bypass")
     cmd.append(url)
     
     try:
         log("FILE", f"Downloading video (Bypass={use_bypass}): {url}")
-        process = await asyncio.create_subprocess_exec(*cmd, stdout=asyncio.subprocess.PIPE, stderr=asyncio.subprocess.PIPE)
+        process = await asyncio.create_subprocess_exec(
+            *cmd, 
+            stdout=asyncio.subprocess.PIPE, 
+            stderr=asyncio.subprocess.PIPE
+        )
         stdout, stderr = await process.communicate()
         
         if process.returncode != 0:
             err_text = stderr.decode().lower()
             if not use_bypass and ("available in your country" in err_text or "geo-restricted" in err_text):
                 log("FILE", "Geo-restriction during download. Retrying with --geo-bypass...")
-                return await download_video_optimal(url, output_folder, use_bypass=True)
+                return await download_video_optimal(url, output_folder, job_id, use_bypass=True)
             raise Exception(err_text)
             
+        final_path = stdout.decode().strip()
+        if final_path and os.path.exists(final_path):
+            return final_path
+            
+        # Fallback manual scan if print fails (shouldn't happen with modern yt-dlp)
         for f in os.listdir(output_folder):
-            if f.endswith((".mkv", ".mp4", ".webm")): return os.path.join(output_folder, f)
+            if f.startswith(job_id) and f.endswith((".mkv", ".mp4", ".webm")):
+                return os.path.join(output_folder, f)
         return ""
     except Exception as e:
         log("ERROR", f"Download failed: {e}"); return ""

@@ -350,7 +350,7 @@ async def queue_processor():
             # --- Phase A: Sourcing ---
             if job.is_url_job:
                 await application.bot.send_message(job.chat_id, f"📥 *Sourcing Ingredients:* `{job.video_title}`", parse_mode=ParseMode.MARKDOWN)
-                job.local_filepath = await download_video_optimal(job.original_url, UPLOAD_FOLDER)
+                job.local_filepath = await download_video_optimal(job.original_url, UPLOAD_FOLDER, job.job_id)
                 if not job.local_filepath: raise Exception("Failed to download video.")
 
             await application.bot.send_message(job.chat_id, f"▶️ *Processing:* `{job.video_title or job.original_filename}` ({duration_str})...", parse_mode=ParseMode.MARKDOWN)
